@@ -1,10 +1,16 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
+using System.Web;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.IdentityModel.Clients.ActiveDirectory;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using Nop.Core;
 using Nop.Core.Caching;
 using Nop.Core.Domain.Catalog;
@@ -52,7 +58,8 @@ namespace Nop.Web.Areas.Admin.Controllers
         private readonly IStoreService _storeService;
         private readonly IUrlRecordService _urlRecordService;
         private readonly IWorkContext _workContext;
-
+        private readonly System.Net.Http.IHttpClientFactory _httpClientFactory;
+        private readonly ILogger _logger;
         #endregion
 
         #region Ctor
@@ -75,7 +82,9 @@ namespace Nop.Web.Areas.Admin.Controllers
             IStoreMappingService storeMappingService,
             IStoreService storeService,
             IUrlRecordService urlRecordService,
-            IWorkContext workContext)
+            IWorkContext workContext,
+            System.Net.Http.IHttpClientFactory httpClientFactory,
+            ILogger logger)
         {
             _aclService = aclService;
             _categoryModelFactory = categoryModelFactory;
@@ -96,6 +105,8 @@ namespace Nop.Web.Areas.Admin.Controllers
             _storeService = storeService;
             _urlRecordService = urlRecordService;
             _workContext = workContext;
+            _httpClientFactory = httpClientFactory;
+            _logger = logger;
         }
 
         #endregion
@@ -104,6 +115,10 @@ namespace Nop.Web.Areas.Admin.Controllers
 
         protected virtual async Task UpdateLocalesAsync(Category category, CategoryModel model)
         {
+            // Google Translate API
+            var localizedModels = await TranslateAndFillAsync<CategoryModel, CategoryLocalizedModel>(model);
+            model.Locales = localizedModels;
+
             foreach (var localized in model.Locales)
             {
                 await _localizedEntityService.SaveLocalizedValueAsync(category,
@@ -228,7 +243,541 @@ namespace Nop.Web.Areas.Admin.Controllers
 
         #endregion
 
-        #region Create / Edit / Delete
+        #region Create / Edit / Delete / Translate
+
+        // Google Translate API 대상 텍스트 언어 감지
+        public async Task<string> DetectLanguageAsync(string text)
+        {
+            try
+            {
+                var apiKey = "AIzaSyAuCUvfZYFLnPEiPLVbc__oV2MmfjFfFT0";  // 추후에 환경 변수나 구성 파일에서 읽어오는 것으로 구현
+                var url = $"https://translation.googleapis.com/language/translate/v2/detect?key={apiKey}&q={text}";
+
+                using (HttpClient client = new HttpClient())
+                {
+                    System.Diagnostics.Debug.WriteLine($"Detecting language for text: {text}");
+
+                    var response = await client.GetAsync(url);
+                    response.EnsureSuccessStatusCode();
+
+                    var jsonResponse = await response.Content.ReadAsStringAsync();
+                    var jsonObject = JObject.Parse(jsonResponse);
+
+                    var detectedLanguage = jsonObject["data"]["detections"][0][0]["language"].ToString();
+
+                    // 만약 감지된 언어가 "zh-"로 시작하면 "zh-CN"으로 강제 설정
+                    if (detectedLanguage.StartsWith("zh-"))
+                    {
+                        detectedLanguage = "zh-CN";
+                    }
+                    // 만약 감지된 언어가 "ar-Latn"이면 "ar"로 강제 설정
+                    else if (detectedLanguage == "ar-Latn")
+                    {
+                        detectedLanguage = "ar";
+                    }
+
+                    return detectedLanguage;
+                }
+            }
+            catch (HttpRequestException ex)
+            {
+                throw new Exception($"Google Translate API 호출 중 오류 발생: {ex.Message}");
+            }
+            catch (JsonReaderException ex)
+            {
+                throw new Exception($"JSON 파싱 중 오류 발생: {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"서버 내부 오류: {ex.Message}");
+            }
+        }
+
+        private Dictionary<string, string> translationCache = new Dictionary<string, string>();
+
+        // Google Translate API 번역 함수
+        public async Task<string> TranslateTextAsync(string text, string sourceLanguage, string targetLanguage)
+        {
+            // 지원하는 언어 목록
+            var supportedLanguages = new HashSet<string>
+            {
+                "af", "sq", "am", "ar", "hy", "as", "ay", "az", "bm", "eu", "be", "bn",
+                "bho", "bs", "bg", "ca", "ceb", "zh-CN", "zh-TW", "co", "hr", "cs", "da",
+                "dv", "doi", "nl", "en", "eo", "et", "ee", "fil", "fi", "fr", "fy", "gl",
+                "ka", "de", "el", "gn", "gu", "ht", "ha", "haw", "he", "hi", "hmn", "hu",
+                "is", "ig", "ilo", "id", "ga", "it", "ja", "jv", "kn", "kk", "km", "rw",
+                "gom", "ko", "kri", "ku", "ckb", "ky", "lo", "la", "lv", "ln", "lt", "lg",
+                "lb", "mk", "mai", "mg", "ms", "ml", "mt", "mi", "mr", "mni-Mtei", "lus",
+                "mn", "my", "ne", "no", "ny", "or", "om", "ps", "fa", "pl", "pt", "pa",
+                "qu", "ro", "ru", "sm", "sa", "gd", "nso", "sr", "st", "sn", "sd", "si",
+                "sk", "sl", "so", "es", "su", "sw", "sv", "tl", "tg", "ta", "tt", "te",
+                "th", "ti", "ts", "tr", "tk", "ak", "uk", "ur", "ug", "uz", "vi", "cy",
+                "xh", "yi", "yo", "zu"
+            };
+
+            // BCP-47 태그에서 기본 언어 코드만 추출
+            string convertSpecialLanguageCodes(string langTag)
+            {
+                // 특정 언어 태그에 대해 특별한 처리
+                switch (langTag)
+                {
+                    case "zh-CN":
+                        return "zh-CN";
+                    case "zh-TW":
+                        return "zh-TW";
+                    default:
+                        return langTag.Split('-')[0];
+                }
+            }
+
+            var primarySourceLanguage = convertSpecialLanguageCodes(sourceLanguage);
+            var primaryTargetLanguage = convertSpecialLanguageCodes(targetLanguage);
+
+            // sourceLanguage와 targetLanguage가 지원하는 언어인지 확인
+            if (!supportedLanguages.Contains(primarySourceLanguage) || !supportedLanguages.Contains(primaryTargetLanguage))
+            {
+                var errorMessage = $"Translating text: {text} from {sourceLanguage} to {targetLanguage} [에러(ERROR)]";
+                return $"{text} {errorMessage}";
+            }
+
+            // 캐시에서 번역된 텍스트 확인
+            var cacheKey = $"{sourceLanguage}-{targetLanguage}:{text}";
+            if (translationCache.ContainsKey(cacheKey))
+            {
+                return translationCache[cacheKey];
+            }
+
+            try
+            {
+                System.Diagnostics.Debug.WriteLine($"Translating text: {text} from {sourceLanguage} to {targetLanguage}");
+
+                var apiKey = "AIzaSyAuCUvfZYFLnPEiPLVbc__oV2MmfjFfFT0";  // 추후에 환경 변수나 구성 파일에서 읽어오는 것으로 구현
+                var encodedText = HttpUtility.UrlEncode(text);
+                var url = $"https://translation.googleapis.com/language/translate/v2?source={sourceLanguage}&target={targetLanguage}&key={apiKey}&q={encodedText}";
+
+                using (HttpClient client = new HttpClient())
+                {
+                    var response = await client.GetAsync(url);
+                    response.EnsureSuccessStatusCode();
+
+                    var jsonResponse = await response.Content.ReadAsStringAsync();
+                    var jsonObject = JObject.Parse(jsonResponse);
+
+                    // "translatedText" 값을 안전하게 추출
+                    var translatedText = jsonObject["data"]?["translations"]?[0]?["translatedText"]?.ToString();
+
+                    if (translatedText == null)
+                    {
+                        var errorMessage = $"Google Translate API에서 예상치 못한 응답을 받았습니다. Translating text: {text} from {sourceLanguage} to {targetLanguage} [에러(ERROR)]";
+                        return $"{text} {errorMessage}";
+                    }
+
+                    // 번역된 텍스트를 캐시에 저장
+                    translationCache[cacheKey] = translatedText;
+
+                    return translatedText;
+                }
+            }
+            catch (HttpRequestException ex)
+            {
+                var errorMessage = $"Google Translate API 호출 중 오류 발생: {ex.Message}. Translating text: {text} from {sourceLanguage} to {targetLanguage} [에러(ERROR)]";
+                return $"{text} {errorMessage}";
+            }
+            catch (JsonReaderException ex)
+            {
+                var errorMessage = $"JSON 파싱 중 오류 발생: {ex.Message}. Translating text: {text} from {sourceLanguage} to {targetLanguage} [에러(ERROR)]";
+                return $"{text} {errorMessage}";
+            }
+            catch (Exception ex)
+            {
+                var errorMessage = $"서버 내부 오류: {ex.Message}. Translating text: {text} from {sourceLanguage} to {targetLanguage} [에러(ERROR)]";
+                return $"{text} {errorMessage}";
+            }
+        }
+
+        private readonly Dictionary<int, string> targetLanguages = new Dictionary<int, string>
+        {
+            { 1, "en" },
+            { 2, "ko" },
+            { 3, "zh-CN" },
+            { 4, "vi" },
+            { 5, "th" },
+            // 추가 언어 가능
+        };
+
+        // Google Translate API Main
+        public async Task<List<TResult>> TranslateAndFillAsync<TModel, TResult>(TModel model)
+                       where TModel : class
+                       where TResult : class, new()
+        {
+            System.Diagnostics.Debug.WriteLine("Starting translation process for provided model.");
+
+            var localizedModels = new List<TResult>();
+            var baseProperties = typeof(TModel).GetProperties().Where(p => p.PropertyType == typeof(string) && p.Name != "Description" && p.Name != "PageSizeOptions");
+
+            // 기준 언어 감지 (Name 속성을 기준으로 함)
+            var baseText = typeof(TModel).GetProperty("Name").GetValue(model).ToString();
+            var baseLanguage = await DetectLanguageAsync(baseText);
+
+            foreach (var lang in targetLanguages)
+            {
+                System.Diagnostics.Debug.WriteLine($"Processing translation for target language: {lang.Value}");
+
+                // 중국어 데이터가 이미 존재하는 경우 번역을 건너뜀
+                if (lang.Value == "zh-CN" && model is CategoryModel categoryModel)
+                {
+                    var existingChineseData = categoryModel.Locales.FirstOrDefault(l => l.LanguageId == 3);
+                    if (existingChineseData != null && !string.IsNullOrWhiteSpace(existingChineseData.Name))
+                    {
+                        var chineseDataCopy = new TResult();
+                        foreach (var prop in typeof(TResult).GetProperties())
+                        {
+                            if (prop.CanWrite)
+                            {
+                                prop.SetValue(chineseDataCopy, prop.GetValue(existingChineseData));
+                            }
+                        }
+                        localizedModels.Add(chineseDataCopy);
+                        continue;
+                    }
+                }
+
+                var translatedModel = new TResult();
+
+                // 언어 ID 설정.
+                typeof(TResult).GetProperty("LanguageId")?.SetValue(translatedModel, lang.Key);
+
+                if (baseLanguage != lang.Value)
+                {
+                    foreach (var property in baseProperties)
+                    {
+                        var originalValue = (string)property.GetValue(model);
+
+                        // 값을 트림하여 앞뒤의 빈 공간 제거
+                        originalValue = originalValue?.Trim();
+
+                        // 값이 없으면 번역하지 않고 진행
+                        if (string.IsNullOrEmpty(originalValue))
+                            continue;
+
+                        // 값이 숫자로만 이루어져 있으면 번역하지 않고 그 값을 그대로 사용
+                        if (int.TryParse(originalValue, out _))
+                        {
+                            typeof(TResult).GetProperty(property.Name)?.SetValue(translatedModel, originalValue);
+                            continue;
+                        }
+
+                        string translatedValue;
+
+                        if (baseLanguage == lang.Value || baseLanguage == "en")
+                        {
+                            // 원본 언어와 목표 언어가 동일하거나 원본 언어가 영어인 경우 번역하지 않고 원본 값을 사용
+                            translatedValue = originalValue;
+                        }
+                        else if (lang.Value != "en")
+                        {
+                            // 기준 언어가 영어가 아니면 먼저 영어로 번역
+                            originalValue = await TranslateTextAsync(originalValue, baseLanguage, "en");
+                            // 그 다음 원하는 언어로 번역
+                            translatedValue = await TranslateTextAsync(originalValue, "en", lang.Value);
+                        }
+                        else
+                        {
+                            // 원본 언어를 영어로 번역
+                            translatedValue = await TranslateTextAsync(originalValue, baseLanguage, "en");
+                        }
+
+                        // TResult에 해당 속성이 있는지 확인하고 설정
+                        var resultProperty = typeof(TResult).GetProperty(property.Name);
+                        if (resultProperty != null && resultProperty.PropertyType == typeof(string))
+                        {
+                            resultProperty.SetValue(translatedModel, translatedValue);
+                        }
+                    }
+                }
+                else
+                {
+                    foreach (var property in baseProperties)
+                    {
+                        var originalValue = (string)property.GetValue(model);
+                        typeof(TResult).GetProperty(property.Name)?.SetValue(translatedModel, originalValue);
+                    }
+                }
+
+                localizedModels.Add(translatedModel);
+            }
+
+            return localizedModels;
+        }
+
+        public class CategoryJsonModel
+        {
+            public string Category_id { get; set; }
+            public string Category_name { get; set; }
+            public List<CategoryJsonModel> Sub_categories { get; set; } = new List<CategoryJsonModel>();
+            public string Updated_time { get; set; }
+        }
+
+        public class RootObject
+        {
+            public List<CategoryJsonModel> Categories { get; set; }
+        }
+
+        public async Task<IActionResult> GetCategoryFromTaobaoAsync()
+        {
+            try
+            {
+                _logger.Information("Fetching categories from Taobao API...");
+
+                var client = _httpClientFactory.CreateClient();
+                var request = new HttpRequestMessage
+                {
+                    Method = HttpMethod.Get,
+                    RequestUri = new Uri("https://taobao-tmall-tao-bao-data-service.p.rapidapi.com/category/allCategories"),
+                };
+
+                request.Headers.Add("X-RapidAPI-Key", "e9e7dd9c85msh4c01ab54707ebc8p120a38jsn0ab00d00a6cf");
+                request.Headers.Add("X-RapidAPI-Host", "taobao-tmall-Tao-Bao-data-service.p.rapidapi.com");
+
+                using (var response = await client.SendAsync(request))
+                {
+                    response.EnsureSuccessStatusCode();
+                    var body = await response.Content.ReadAsStringAsync();
+                    var rootObject = JsonConvert.DeserializeObject<RootObject>(body);
+
+                    System.Diagnostics.Debug.WriteLine("Received categories from Taobao.");
+
+                    var existingCategoryIds = await _categoryService.GetCategoriesByDescriptionAsync();
+
+                    // Remove processed categories recursively
+                    rootObject.Categories = rootObject.Categories.Where(c => !existingCategoryIds.Contains(c.Category_id)).ToList();
+                    foreach (var category in rootObject.Categories)
+                    {
+                        category.Sub_categories = category.Sub_categories.Where(sc => !existingCategoryIds.Contains(sc.Category_id)).ToList();
+                        foreach (var subCategory in category.Sub_categories)
+                        {
+                            subCategory.Sub_categories = subCategory.Sub_categories.Where(scc => !existingCategoryIds.Contains(scc.Category_id)).ToList();
+                        }
+                    }
+
+                    return Ok(rootObject);
+                }
+            }
+            catch (HttpRequestException ex)
+            {
+                return BadRequest($"API 호출 중 오류 발생: {ex.Message}");
+            }
+            catch (JsonSerializationException ex)
+            {
+                return BadRequest($"JSON 변환 중 오류 발생: {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"서버 내부 오류: {ex.Message}");
+            }
+        }
+
+        public async Task<CategoryModel> CreateCategoryModelFromTaobaoAsync(CategoryJsonModel taobaoCategory, int displayOrder, int childDisplayOrder = 0)
+        {
+            System.Diagnostics.Debug.WriteLine($"Creating CategoryModel from Taobao data: {taobaoCategory.Category_name} with ID: {taobaoCategory.Category_id}");
+
+            var originalValue = taobaoCategory.Category_name;
+            if (string.IsNullOrEmpty(originalValue))
+            {
+                throw new Exception("No categories found in Taobao data.");
+            }
+
+            var baseLanguage = await DetectLanguageAsync(originalValue);
+
+            var translatedEn = await TranslateTextAsync(originalValue, baseLanguage, "en");
+            var translatedValue = await TranslateTextAsync(translatedEn, "en", "ko");
+
+            // CategoryModel 설정
+            var model = new CategoryModel
+            {
+                Name = translatedValue,
+                Description = taobaoCategory.Category_id,
+                MetaKeywords = null,
+                MetaDescription = null,
+                MetaTitle = null,
+                PageSizeOptions = "6,3,9",
+                ParentCategoryId = 0,
+                CategoryTemplateId = 1,
+                PictureId = 0,
+                PageSize = 5,
+                AllowCustomersToSelectPageSize = true,
+                ShowOnHomepage = false,
+                IncludeInTopMenu = true,
+                Published = true,
+                Deleted = false,
+                DisplayOrder = childDisplayOrder == 0 ? displayOrder : childDisplayOrder,
+                PriceRangeFiltering = true,
+                PriceTo = 10000,
+                ManuallyPriceRange = true,
+                Locales = new List<CategoryLocalizedModel>
+                {
+                    new CategoryLocalizedModel
+                    {
+                        LanguageId = 3, // 중국어의 LanguageId
+                        Name = taobaoCategory.Category_name, // 원본 중국어 이름
+                        Description = taobaoCategory.Category_id // 원본 카테고리 Id
+                    }
+                }
+            };
+
+            return model;
+        }
+
+        private async Task<int> ProcessCategoryAsync(CategoryModel model)
+        {
+            // 로그 추가
+            _logger.Information($"Processing/Updating category: {model.Name} with Description(ID): {model.Description}");
+            System.Diagnostics.Debug.WriteLine($"Processing category: {model.Name} with Description: {model.Description}");
+
+            var existingCategory = await _categoryService.GetCategoryByDescriptionAsync(model.Description);
+            Category category;
+
+            if (existingCategory != null)
+            {
+                // 기존 카테고리가 존재하면 이름과 Description 변경 사항 확인
+                if (existingCategory.Name != model.Name || existingCategory.Description != model.Description)
+                {
+                    // 변경 사항이 있을 경우에만 업데이트
+                    category = model.ToEntity(existingCategory);
+                    category.UpdatedOnUtc = DateTime.UtcNow;
+                    await _categoryService.UpdateCategoryAsync(category);
+
+                    // 이름이 변경되었을 경우에만 번역 작업 수행
+                    if (existingCategory.Name != model.Name)
+                    {
+                        await UpdateLocalesAsync(category, model);
+                    }
+                }
+                else
+                {
+                    // 변경 사항이 없으면 메서드 종료
+                    return existingCategory.Id;
+                }
+            }
+            else
+            {
+                // 존재하지 않으면 새로 생성
+                category = model.ToEntity<Category>();
+                category.CreatedOnUtc = DateTime.UtcNow;
+                category.UpdatedOnUtc = DateTime.UtcNow;
+                await _categoryService.InsertCategoryAsync(category);
+                await UpdateLocalesAsync(category, model);  // 새 카테고리를 추가할 때는 번역 작업이 필요합니다.
+            }
+
+            model.SeName = await _urlRecordService.ValidateSeNameAsync(category, model.SeName, category.Name, true);
+            await _urlRecordService.SaveSlugAsync(category, model.SeName, 0);
+
+            var allDiscounts = await _discountService.GetAllDiscountsAsync(DiscountType.AssignedToCategories, showHidden: true, isActive: null);
+            foreach (var discount in allDiscounts)
+            {
+                if (model.SelectedDiscountIds != null && model.SelectedDiscountIds.Contains(discount.Id))
+                    await _categoryService.InsertDiscountCategoryMappingAsync(new DiscountCategoryMapping { DiscountId = discount.Id, EntityId = category.Id });
+            }
+
+            await UpdatePictureSeoNamesAsync(category);
+            await SaveCategoryAclAsync(category, model);
+            await SaveStoreMappingsAsync(category, model);
+
+            await _customerActivityService.InsertActivityAsync(existingCategory == null ? "AddNewCategory" : "EditCategory",
+                string.Format(await _localizationService.GetResourceAsync(existingCategory == null ? "ActivityLog.AddNewCategory" : "ActivityLog.EditCategory"), category.Name), category);
+
+            return category.Id;
+        }
+
+        private async Task ProcessCategoriesRecursivelyAsync(CategoryJsonModel categoryJson, int parentDisplayOrder)
+        {
+            // 로그 추가
+            _logger.Information($"Processing main category: {categoryJson.Category_name} with ID: {categoryJson.Category_id}");
+            System.Diagnostics.Debug.WriteLine($"Processing main category: {categoryJson.Category_name} with ID: {categoryJson.Category_id}");
+
+
+            // 1단계 카테고리 처리
+            var categoryModel = await CreateCategoryModelFromTaobaoAsync(categoryJson, parentDisplayOrder);
+            var parentId = await ProcessCategoryAsync(categoryModel);
+
+            var firstLevelChildDisplayOrder = 0;
+            foreach (var firstLevelChildCategoryJson in categoryJson.Sub_categories)
+            {
+                // 로그 추가
+                _logger.Information($"Processing 1st level child category: {firstLevelChildCategoryJson.Category_name} with ID: {firstLevelChildCategoryJson.Category_id}");
+                System.Diagnostics.Debug.WriteLine($"Processing 1st level sub-category: {firstLevelChildCategoryJson.Category_name} with ID: {firstLevelChildCategoryJson.Category_id}");
+
+
+                var firstLevelChildCategoryModel = await CreateCategoryModelFromTaobaoAsync(firstLevelChildCategoryJson, ++firstLevelChildDisplayOrder);
+                firstLevelChildCategoryModel.ParentCategoryId = parentId;
+                var firstLevelChildId = await ProcessCategoryAsync(firstLevelChildCategoryModel);
+
+                var secondLevelChildDisplayOrder = 0;
+                foreach (var secondLevelChildCategoryJson in firstLevelChildCategoryJson.Sub_categories)
+                {
+                    // 로그 추가
+                    _logger.Information($"Processing 2nd level child category: {secondLevelChildCategoryJson.Category_name} with ID: {secondLevelChildCategoryJson.Category_id}");
+                    System.Diagnostics.Debug.WriteLine($"Processing 2nd level sub-category: {secondLevelChildCategoryJson.Category_name} with ID: {secondLevelChildCategoryJson.Category_id}");
+
+                    var secondLevelChildCategoryModel = await CreateCategoryModelFromTaobaoAsync(secondLevelChildCategoryJson, ++secondLevelChildDisplayOrder);
+                    secondLevelChildCategoryModel.ParentCategoryId = firstLevelChildId;
+                    var secondLevelChildId = await ProcessCategoryAsync(secondLevelChildCategoryModel);
+
+                    var thirdLevelChildDisplayOrder = 0;
+                    foreach (var thirdLevelChildCategoryJson in secondLevelChildCategoryJson.Sub_categories)
+                    {
+                        // 로그 추가
+                        _logger.Information($"Processing 3rd level child category: {thirdLevelChildCategoryJson.Category_name} with ID: {thirdLevelChildCategoryJson.Category_id}");
+                        System.Diagnostics.Debug.WriteLine($"Processing 3rd level sub-category: {thirdLevelChildCategoryJson.Category_name} with ID: {thirdLevelChildCategoryJson.Category_id}");
+
+                        var thirdLevelChildCategoryModel = await CreateCategoryModelFromTaobaoAsync(thirdLevelChildCategoryJson, ++thirdLevelChildDisplayOrder);
+                        thirdLevelChildCategoryModel.ParentCategoryId = secondLevelChildId;
+                        await ProcessCategoryAsync(thirdLevelChildCategoryModel);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// API를 통해 Taobao 카테고리를 가져와 NopCommerce에 카테고리를 생성합니다.
+        /// </summary>
+        /// <param name="continueEditing">계속 편집할지 여부를 나타냅니다.</param>
+        /// <returns>카테고리 목록 뷰로 리다이렉트합니다.</returns>
+        public virtual async Task<IActionResult> ApiCreate(bool continueEditing)
+        {
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageCategories))
+                return AccessDeniedView();
+
+            var result = await GetCategoryFromTaobaoAsync();
+            if (!(result is OkObjectResult okResult && okResult.Value is RootObject taobaoData))
+            {
+                throw new Exception("Failed to retrieve Taobao category data.");
+            }
+
+            // 데이터베이스에서 카테고리 목록 가져오기
+            var existingCategoryIds = await _categoryService.GetCategoriesByDescriptionAsync();
+
+            // 누락된 카테고리 찾기
+            var missingCategories = taobaoData.Categories
+                .Where(c => !existingCategoryIds.Contains(c.Category_id))
+                .ToList();
+
+            // 전역 변수로 부모 카테고리의 디스플레이 오더 관리
+            var parentDisplayOrder = 48;
+
+            // 누락된 부모 카테고리 처리
+            foreach (var parentCategory in missingCategories)
+            {
+                await ProcessCategoriesRecursivelyAsync(parentCategory, parentDisplayOrder++);
+            }
+
+            _notificationService.SuccessNotification(await _localizationService.GetResourceAsync("Admin.Catalog.Categories.Added"));
+
+            if (!continueEditing)
+                return RedirectToAction("List");
+
+            return RedirectToAction("List");
+        }
 
         public virtual async Task<IActionResult> Create()
         {
@@ -288,7 +837,7 @@ namespace Nop.Web.Areas.Admin.Controllers
 
                 if (!continueEditing)
                     return RedirectToAction("List");
-                
+
                 return RedirectToAction("Edit", new { id = category.Id });
             }
 
@@ -393,7 +942,7 @@ namespace Nop.Web.Areas.Admin.Controllers
 
                 if (!continueEditing)
                     return RedirectToAction("List");
-                
+
                 return RedirectToAction("Edit", new { id = category.Id });
             }
 

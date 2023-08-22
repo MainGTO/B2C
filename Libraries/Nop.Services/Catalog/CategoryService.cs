@@ -794,6 +794,19 @@ namespace Nop.Services.Catalog
             });
         }
 
+        public async Task<Category> GetCategoryByDescriptionAsync(string description)
+        {
+            if (string.IsNullOrEmpty(description))
+                return null;
+
+            return await _categoryRepository.Table.FirstOrDefaultAsync(c => c.Description == description);
+        }
+
+        public async Task<List<string>> GetCategoriesByDescriptionAsync()
+        {
+            return await _categoryRepository.Table.Select(c => c.Description).ToListAsync();
+        }
+
         #endregion
     }
 }

@@ -990,61 +990,172 @@ namespace Nop.Web.Areas.Admin.Controllers
         // Google Translate API 대상 텍스트 언어 감지
         public async Task<string> DetectLanguageAsync(string text)
         {
-            var apiKey = "AIzaSyAuCUvfZYFLnPEiPLVbc__oV2MmfjFfFT0";
-            var url = $"https://translation.googleapis.com/language/translate/v2/detect?key={apiKey}&q={text}";
-
-            using (HttpClient client = new HttpClient())
+            try
             {
-                var response = await client.GetAsync(url);
-                var jsonResponse = await response.Content.ReadAsStringAsync();
-                var jsonObject = JObject.Parse(jsonResponse);
+                var apiKey = "AIzaSyAuCUvfZYFLnPEiPLVbc__oV2MmfjFfFT0";  // 추후에 환경 변수나 구성 파일에서 읽어오는 것으로 구현
+                var url = $"https://translation.googleapis.com/language/translate/v2/detect?key={apiKey}&q={text}";
 
-                return jsonObject["data"]["detections"][0][0]["language"].ToString();
+                using (HttpClient client = new HttpClient())
+                {
+                    System.Diagnostics.Debug.WriteLine($"Detecting language for text: {text}");
+
+                    var response = await client.GetAsync(url);
+                    response.EnsureSuccessStatusCode();
+
+                    var jsonResponse = await response.Content.ReadAsStringAsync();
+                    var jsonObject = JObject.Parse(jsonResponse);
+
+                    var detectedLanguage = jsonObject["data"]["detections"][0][0]["language"].ToString();
+
+                    // 만약 감지된 언어가 "zh-"로 시작하면 "zh-CN"으로 강제 설정
+                    if (detectedLanguage.StartsWith("zh-"))
+                    {
+                        detectedLanguage = "zh-CN";
+                    }
+                    // 만약 감지된 언어가 "ar-Latn"이면 "ar"로 강제 설정
+                    else if (detectedLanguage == "ar-Latn")
+                    {
+                        detectedLanguage = "ar";
+                    }
+
+                    return detectedLanguage;
+                }
+            }
+            catch (HttpRequestException ex)
+            {
+                throw new Exception($"Google Translate API 호출 중 오류 발생: {ex.Message}");
+            }
+            catch (JsonReaderException ex)
+            {
+                throw new Exception($"JSON 파싱 중 오류 발생: {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"서버 내부 오류: {ex.Message}");
             }
         }
+
+        private Dictionary<string, string> translationCache = new Dictionary<string, string>();
 
         // Google Translate API 번역 함수
         public async Task<string> TranslateTextAsync(string text, string sourceLanguage, string targetLanguage)
         {
-            var apiKey = "AIzaSyAuCUvfZYFLnPEiPLVbc__oV2MmfjFfFT0";
-            var encodedText = HttpUtility.UrlEncode(text);
-            var url = $"https://translation.googleapis.com/language/translate/v2?source={sourceLanguage}&target={targetLanguage}&key={apiKey}&q={encodedText}";
-
-            using (HttpClient client = new HttpClient())
+            // 지원하는 언어 목록
+            var supportedLanguages = new HashSet<string>
             {
-                var response = await client.GetAsync(url);
-                var jsonResponse = await response.Content.ReadAsStringAsync();
-                var jsonObject = JObject.Parse(jsonResponse);
+                "af", "sq", "am", "ar", "hy", "as", "ay", "az", "bm", "eu", "be", "bn",
+                "bho", "bs", "bg", "ca", "ceb", "zh-CN", "zh-TW", "co", "hr", "cs", "da",
+                "dv", "doi", "nl", "en", "eo", "et", "ee", "fil", "fi", "fr", "fy", "gl",
+                "ka", "de", "el", "gn", "gu", "ht", "ha", "haw", "he", "hi", "hmn", "hu",
+                "is", "ig", "ilo", "id", "ga", "it", "ja", "jv", "kn", "kk", "km", "rw",
+                "gom", "ko", "kri", "ku", "ckb", "ky", "lo", "la", "lv", "ln", "lt", "lg",
+                "lb", "mk", "mai", "mg", "ms", "ml", "mt", "mi", "mr", "mni-Mtei", "lus",
+                "mn", "my", "ne", "no", "ny", "or", "om", "ps", "fa", "pl", "pt", "pa",
+                "qu", "ro", "ru", "sm", "sa", "gd", "nso", "sr", "st", "sn", "sd", "si",
+                "sk", "sl", "so", "es", "su", "sw", "sv", "tl", "tg", "ta", "tt", "te",
+                "th", "ti", "ts", "tr", "tk", "ak", "uk", "ur", "ug", "uz", "vi", "cy",
+                "xh", "yi", "yo", "zu"
+            };
 
-                // "translatedText" 값을 안전하게 추출
-                var translatedText = jsonObject["data"]?["translations"]?[0]?["translatedText"]?.ToString();
-
-                if (translatedText == null)
+            // BCP-47 태그에서 기본 언어 코드만 추출
+            string convertSpecialLanguageCodes(string langTag)
+            {
+                // 특정 언어 태그에 대해 특별한 처리
+                switch (langTag)
                 {
-                    // 오류 처리 코드
-                    Console.WriteLine("");
+                    case "zh-CN":
+                        return "zh-CN";
+                    case "zh-TW":
+                        return "zh-TW";
+                    default:
+                        return langTag.Split('-')[0];
                 }
+            }
 
-                return translatedText;
+            var primarySourceLanguage = convertSpecialLanguageCodes(sourceLanguage);
+            var primaryTargetLanguage = convertSpecialLanguageCodes(targetLanguage);
+
+            // sourceLanguage와 targetLanguage가 지원하는 언어인지 확인
+            if (!supportedLanguages.Contains(primarySourceLanguage) || !supportedLanguages.Contains(primaryTargetLanguage))
+            {
+                var errorMessage = $"Translating text: {text} from {sourceLanguage} to {targetLanguage} [에러(ERROR)]";
+                return $"{text} {errorMessage}";
+            }
+
+            // 캐시에서 번역된 텍스트 확인
+            var cacheKey = $"{sourceLanguage}-{targetLanguage}:{text}";
+            if (translationCache.ContainsKey(cacheKey))
+            {
+                return translationCache[cacheKey];
+            }
+
+            try
+            {
+                System.Diagnostics.Debug.WriteLine($"Translating text: {text} from {sourceLanguage} to {targetLanguage}");
+
+                var apiKey = "AIzaSyAuCUvfZYFLnPEiPLVbc__oV2MmfjFfFT0";  // 추후에 환경 변수나 구성 파일에서 읽어오는 것으로 구현
+                var encodedText = HttpUtility.UrlEncode(text);
+                var url = $"https://translation.googleapis.com/language/translate/v2?source={sourceLanguage}&target={targetLanguage}&key={apiKey}&q={encodedText}";
+
+                using (HttpClient client = new HttpClient())
+                {
+                    var response = await client.GetAsync(url);
+                    response.EnsureSuccessStatusCode();
+
+                    var jsonResponse = await response.Content.ReadAsStringAsync();
+                    var jsonObject = JObject.Parse(jsonResponse);
+
+                    // "translatedText" 값을 안전하게 추출
+                    var translatedText = jsonObject["data"]?["translations"]?[0]?["translatedText"]?.ToString();
+
+                    if (translatedText == null)
+                    {
+                        var errorMessage = $"Google Translate API에서 예상치 못한 응답을 받았습니다. Translating text: {text} from {sourceLanguage} to {targetLanguage} [에러(ERROR)]";
+                        return $"{text} {errorMessage}";
+                    }
+
+                    // 번역된 텍스트를 캐시에 저장
+                    translationCache[cacheKey] = translatedText;
+
+                    return translatedText;
+                }
+            }
+            catch (HttpRequestException ex)
+            {
+                var errorMessage = $"Google Translate API 호출 중 오류 발생: {ex.Message}. Translating text: {text} from {sourceLanguage} to {targetLanguage} [에러(ERROR)]";
+                return $"{text} {errorMessage}";
+            }
+            catch (JsonReaderException ex)
+            {
+                var errorMessage = $"JSON 파싱 중 오류 발생: {ex.Message}. Translating text: {text} from {sourceLanguage} to {targetLanguage} [에러(ERROR)]";
+                return $"{text} {errorMessage}";
+            }
+            catch (Exception ex)
+            {
+                var errorMessage = $"서버 내부 오류: {ex.Message}. Translating text: {text} from {sourceLanguage} to {targetLanguage} [에러(ERROR)]";
+                return $"{text} {errorMessage}";
             }
         }
 
+        private readonly Dictionary<int, string> targetLanguages = new Dictionary<int, string>
+        {
+            { 1, "en" },
+            { 2, "ko" },
+            { 3, "zh-CN" },
+            { 4, "vi" },
+            { 5, "th" },
+            // 추가 언어 가능
+        };
+
         // Google Translate API Main
         public async Task<List<TResult>> TranslateAndFillAsync<TModel, TResult>(TModel model)
-            where TModel : class
-            where TResult : class, new()
+                       where TModel : class
+                       where TResult : class, new()
         {
-            var targetLanguages = new Dictionary<int, string>
-            {
-                { 1, "en" },
-                { 2, "ko" },
-                { 3, "zh-CN" },
-                { 4, "vi" },
-                // 추가 언어 가능
-            };
+            System.Diagnostics.Debug.WriteLine("Starting translation process for provided model.");
 
             var localizedModels = new List<TResult>();
-            var baseProperties = typeof(TModel).GetProperties().Where(p => p.PropertyType == typeof(string));
+            var baseProperties = typeof(TModel).GetProperties().Where(p => p.PropertyType == typeof(string) && p.Name != "Description" && p.Name != "PageSizeOptions");
 
             // 기준 언어 감지 (Name 속성을 기준으로 함)
             var baseText = typeof(TModel).GetProperty("Name").GetValue(model).ToString();
@@ -1052,20 +1163,33 @@ namespace Nop.Web.Areas.Admin.Controllers
 
             foreach (var lang in targetLanguages)
             {
+                System.Diagnostics.Debug.WriteLine($"Processing translation for target language: {lang.Value}");
+
+                // 중국어 데이터가 이미 존재하는 경우 번역을 건너뜀
+                if (lang.Value == "zh-CN" && model is CategoryModel categoryModel)
+                {
+                    var existingChineseData = categoryModel.Locales.FirstOrDefault(l => l.LanguageId == 3);
+                    if (existingChineseData != null && !string.IsNullOrWhiteSpace(existingChineseData.Name))
+                    {
+                        var chineseDataCopy = new TResult();
+                        foreach (var prop in typeof(TResult).GetProperties())
+                        {
+                            if (prop.CanWrite)
+                            {
+                                prop.SetValue(chineseDataCopy, prop.GetValue(existingChineseData));
+                            }
+                        }
+                        localizedModels.Add(chineseDataCopy);
+                        continue;
+                    }
+                }
+
                 var translatedModel = new TResult();
 
                 // 언어 ID 설정.
                 typeof(TResult).GetProperty("LanguageId")?.SetValue(translatedModel, lang.Key);
 
-                if (baseLanguage == lang.Value) // 기준 언어와 동일한 대상 언어인 경우 원본 값을 복사
-                {
-                    foreach (var property in baseProperties)
-                    {
-                        var originalValue = (string)property.GetValue(model);
-                        typeof(TResult).GetProperty(property.Name)?.SetValue(translatedModel, originalValue);
-                    }
-                }
-                else // 기준 언어와 다른 대상 언어인 경우 번역 수행
+                if (baseLanguage != lang.Value)
                 {
                     foreach (var property in baseProperties)
                     {
@@ -1075,7 +1199,25 @@ namespace Nop.Web.Areas.Admin.Controllers
                         if (string.IsNullOrEmpty(originalValue))
                             continue;
 
-                        var translatedValue = await TranslateTextAsync(originalValue, baseLanguage, lang.Value);
+                        string translatedValue;
+
+                        if (baseLanguage == lang.Value || baseLanguage == "en")
+                        {
+                            // 원본 언어와 목표 언어가 동일하거나 원본 언어가 영어인 경우 번역하지 않고 원본 값을 사용
+                            translatedValue = originalValue;
+                        }
+                        else if (lang.Value != "en")
+                        {
+                            // 기준 언어가 영어가 아니면 먼저 영어로 번역
+                            originalValue = await TranslateTextAsync(originalValue, baseLanguage, "en");
+                            // 그 다음 원하는 언어로 번역
+                            translatedValue = await TranslateTextAsync(originalValue, "en", lang.Value);
+                        }
+                        else
+                        {
+                            // 원본 언어를 영어로 번역
+                            translatedValue = await TranslateTextAsync(originalValue, baseLanguage, "en");
+                        }
 
                         // TResult에 해당 속성이 있는지 확인하고 설정
                         var resultProperty = typeof(TResult).GetProperty(property.Name);
@@ -1085,8 +1227,20 @@ namespace Nop.Web.Areas.Admin.Controllers
                         }
                     }
                 }
+                else
+                {
+                    foreach (var property in baseProperties)
+                    {
+                        var originalValue = (string)property.GetValue(model);
+                        typeof(TResult).GetProperty(property.Name)?.SetValue(translatedModel, originalValue);
+                    }
+                }
+
                 localizedModels.Add(translatedModel);
             }
+
+            translationCache.Clear();  // 여기에서 캐시를 초기화
+
             return localizedModels;
         }
 
