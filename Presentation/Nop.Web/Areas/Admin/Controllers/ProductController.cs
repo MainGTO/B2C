@@ -45,6 +45,7 @@ using Nop.Web.Framework.Mvc;
 using Nop.Web.Framework.Mvc.Filters;
 using Nop.Web.Framework.Mvc.ModelBinding;
 using Nop.Web.Framework.Validators;
+using RestSharp;
 using static Nop.Web.Areas.Admin.Controllers.ProductController;
 
 namespace Nop.Web.Areas.Admin.Controllers
