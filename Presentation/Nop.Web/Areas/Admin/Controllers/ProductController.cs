@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Web;
 using DocumentFormat.OpenXml.Vml;
@@ -46,6 +47,7 @@ using Nop.Web.Framework.Mvc.Filters;
 using Nop.Web.Framework.Mvc.ModelBinding;
 using Nop.Web.Framework.Validators;
 using RestSharp;
+using HtmlAgilityPack;
 using static Nop.Web.Areas.Admin.Controllers.ProductController;
 
 namespace Nop.Web.Areas.Admin.Controllers
@@ -860,46 +862,125 @@ namespace Nop.Web.Areas.Admin.Controllers
             public string Base64String { get; set; }
         }
 
-        public class ProductData
+        public class Base64ImageObject
         {
-            public string Name { get; set; }
-            public decimal Price { get; set; }
-            public string ShortDescription { get; set; }
-            public string FullDescription { get; set; }
-            public string Sku { get; set; }
-            public List<ImageObject> ImageBase64List { get; set; }
-            // ... Add other properties as needed ...
+            public string Url { get; set; }
+            public string Base64String { get; set; } // 추가
         }
 
-        public async Task<Dictionary<string, string>> GetProductsFromTaobaoAsync(string query)
+        public class TaobaoProductInfo
         {
-            var client = _httpClientFactory.CreateClient();
-            var request = new HttpRequestMessage
-            {
-                Method = HttpMethod.Get,
-                RequestUri = new Uri($"https://taobao-scaper.p.rapidapi.com/itemSearch.php?q={HttpUtility.UrlEncode(query)}&pageNum=1"),
-                Headers =
+            public string CatId { get; set; }
+            public string CreatedTime { get; set; }
+            public Description Description { get; set; }
+            public string DetailUrl { get; set; }
+            public bool IsTmall { get; set; }
+            public List<ImageObject> ItemImgs { get; set; }
+            public List<string> ItemCategories { get; set; }
+            public string NumIid { get; set; }
+            public decimal OriginalPrice { get; set; }
+            public string OriginalTitle { get; set; }
+            public string PicUrl { get; set; }
+            public decimal Price { get; set; }
+            public List<Props> Props { get; set; }
+            public List<SellerItem> SellerItems { get; set; }
+            public string Title { get; set; }
+        }
+
+        public class Description
         {
-            { "X-RapidAPI-Key", "e9e7dd9c85msh4c01ab54707ebc8p120a38jsn0ab00d00a6cf" },
-            { "X-RapidAPI-Host", "taobao-scaper.p.rapidapi.com" },
-        },
-            };
+            public string Html { get; set; }
+            public List<string> Images { get; set; }
+        }
 
-            var response = await client.SendAsync(request);
-            response.EnsureSuccessStatusCode();
+        public class ImageObject
+        {
+            public bool IsMain { get; set; }
+            public Dictionary<string, ImageSize> Sizes { get; set; }
+            public string Url { get; set; }
+        }
 
-            var body = await response.Content.ReadAsStringAsync();
-            var productDataList = JsonConvert.DeserializeObject<dynamic>(body);
+        public class ImageSize
+        {
+            public int Height { get; set; }
+            public string Url { get; set; }
+            public int Width { get; set; }
+        }
 
-            var productIds = new Dictionary<string, string>();
+        public class Props
+        {
+            public bool IsConfigurator { get; set; }
+            public string OriginalPropertyName { get; set; }
+            public string OriginalValue { get; set; }
+            public string ProductId { get; set; }
+            public string PropertyName { get; set; }
+            public string Value { get; set; }
+            public string VariationId { get; set; }
+        }
 
-            if (productDataList != null && productDataList.items.item != null)
+        public class SellerItem
+        {
+            public string CategoryId { get; set; }
+            public string CreatedTime { get; set; }
+            public string DetailUrl { get; set; }
+            public SellerItemFeatures Features { get; set; }
+            public bool IsTmall { get; set; }
+            public List<ImageObject> ItemImgs { get; set; }
+        }
+
+        public class SellerItemFeatures
+        {
+            public string Reviews { get; set; }
+            public string SalesInLastDays { get; set; }
+            public string TaobaoVendorId { get; set; }
+            public string TotalSales { get; set; }
+        }
+
+        public class ProductInfo
+        {
+            public string Url { get; set; }
+            public string Title { get; set; }
+            public string Id { get; set; }
+        }
+
+        public async Task<List<ProductInfo>> GetProductsFromTaobaoAsync(
+            string categoryId,
+            int page = 1,
+            int size = 500,
+            string sort = "updated_time_desc,vendor_rating_desc",
+            int minSellerRating = 3,
+            int maxSellerRating = 5,
+            string targetLanguage = "en")
+        {
+            var client = new RestClient($"https://taobao-tmall-tao-bao-data-service.p.rapidapi.com/category/categoryItems?categoryId={categoryId}&page={page}&size={size}&sort={sort}&minSellerRating={minSellerRating}&maxSellerRating={maxSellerRating}&target_language={targetLanguage}");
+
+            var request = new RestRequest(Method.GET);
+            request.AddHeader("X-RapidAPI-Key", "e9e7dd9c85msh4c01ab54707ebc8p120a38jsn0ab00d00a6cf");
+            request.AddHeader("X-RapidAPI-Host", "taobao-tmall-Tao-Bao-data-service.p.rapidapi.com");
+
+            var response = await client.ExecuteAsync(request);
+
+            if (response.StatusCode != HttpStatusCode.OK)
             {
-                foreach (var productData in productDataList.items.item)
+                throw new Exception($"API call failed with status code: {response.StatusCode}");
+            }
+
+            var productDataList = JsonConvert.DeserializeObject<dynamic>(response.Content);
+
+            var productList = new List<ProductInfo>();
+
+            if (productDataList != null && productDataList.items != null)
+            {
+                foreach (var productData in productDataList.items)
                 {
-                    var id = productData.num_iid.ToString();
                     var url = productData.detail_url.ToString();
-                    productIds[url] = id;
+                    var title = productData.title.ToString();
+                    var idMatch = Regex.Match(url, @"id=(\d+)");
+                    if (idMatch.Success)
+                    {
+                        var id = idMatch.Groups[1].Value;
+                        productList.Add(new ProductInfo { Url = url, Title = title, Id = id });
+                    }
                 }
             }
             else
@@ -907,62 +988,66 @@ namespace Nop.Web.Areas.Admin.Controllers
                 throw new Exception("The response from the API was not as expected.");
             }
 
-            return productIds;
+            return productList;
         }
 
-        public async Task<ProductData> GetProductFromTaobaoAsync(string taobaoId)
+        public async Task<TaobaoProductInfo> GetProductFromTaobaoAsync(string productId)
         {
-            var client = _httpClientFactory.CreateClient();
-            var request = new HttpRequestMessage
+            var client = new RestClient($"https://taobao-tmall-tao-bao-data-service.p.rapidapi.com/item/itemFullInfo?itemId={productId}");
+            var request = new RestRequest(Method.GET);
+            request.AddHeader("X-RapidAPI-Key", "e9e7dd9c85msh4c01ab54707ebc8p120a38jsn0ab00d00a6cf");
+            request.AddHeader("X-RapidAPI-Host", "taobao-tmall-Tao-Bao-data-service.p.rapidapi.com");
+            var response = await client.ExecuteAsync(request);
+
+            var data = JObject.Parse(response.Content);
+
+            var productInfo = new TaobaoProductInfo
             {
-                Method = HttpMethod.Get,
-                RequestUri = new Uri($"https://taobao-scaper.p.rapidapi.com/itemGet.php?id={taobaoId}"),
-                Headers =
-        {
-            { "X-RapidAPI-Key", "e9e7dd9c85msh4c01ab54707ebc8p120a38jsn0ab00d00a6cf" },
-            { "X-RapidAPI-Host", "taobao-scaper.p.rapidapi.com" },
-        },
+                CatId = data.ContainsKey("cat_id") ? data["cat_id"].ToString() : string.Empty,
+                CreatedTime = data.ContainsKey("created_time") ? data["created_time"].ToString() : string.Empty,
+                Description = data.ContainsKey("description") ? new Description
+                {
+                    Html = data["description"]["html"]?.ToString(),
+                    Images = data["description"]["images"]?.ToObject<List<string>>()
+                } : null,
+                DetailUrl = data.ContainsKey("detail_url") ? data["detail_url"].ToString() : string.Empty,
+                IsTmall = data.ContainsKey("isTmall") ? data["isTmall"].ToObject<bool>() : false,
+                ItemImgs = data.ContainsKey("item_imgs") ? data["item_imgs"].ToObject<List<ImageObject>>() : new List<ImageObject>(),
+                NumIid = data.ContainsKey("num_iid") ? data["num_iid"].ToString() : string.Empty,
+                OriginalPrice = data.ContainsKey("original_price") ? Convert.ToDecimal(data["original_price"].ToString()) : 0m,
+                OriginalTitle = data.ContainsKey("original_title") ? data["original_title"].ToString() : string.Empty,
+                PicUrl = data.ContainsKey("pic_url") ? data["pic_url"].ToString() : string.Empty,
+                Price = data.ContainsKey("price") ? Convert.ToDecimal(data["price"].ToString()) : 0m,
+                Props = data.ContainsKey("props") ? data["props"].ToObject<List<Props>>() : new List<Props>(),
+                Title = data.ContainsKey("title") ? data["title"].ToString() : string.Empty
             };
 
-            var response = await client.SendAsync(request);
-            response.EnsureSuccessStatusCode();
-
-            var body = await response.Content.ReadAsStringAsync();
-
-            var productData = JsonConvert.DeserializeObject<dynamic>(body);
-            var imageObjects = await ConvertImagesToBase64Async(JsonConvert.DeserializeObject<List<ImageObject>>(productData.item.item_imgs.ToString()));
-            return new ProductData
-            {
-                Name = productData.item.title,
-                Price = Convert.ToDecimal(productData.item.price),
-                ShortDescription = productData.item.desc_short,
-                FullDescription = productData.item.desc,
-                ImageBase64List = imageObjects,
-                // ... Fill in other properties as needed ...
-            };
+            return productInfo;
         }
 
-        public class ImageObject
+        private async Task<List<Base64ImageObject>> ConvertImagesToBase64Async(List<string> imageUrlList)
         {
-            public string Url { get; set; }
-            public string Base64String { get; set; } // 추가
-        }
-
-        private async Task<List<ImageObject>> ConvertImagesToBase64Async(List<ImageObject> imageObjectList)
-        {
-            var imageBase64List = new List<ImageObject>();
+            var imageBase64List = new List<Base64ImageObject>();
             var httpClient = _httpClientFactory.CreateClient();
 
-            foreach (var imageObject in imageObjectList)
+            foreach (var imageUrl in imageUrlList)
             {
-                var imageBytes = await httpClient.GetByteArrayAsync(imageObject.Url);
-                var base64String = Convert.ToBase64String(imageBytes);
-
-                imageBase64List.Add(new ImageObject
+                try
                 {
-                    Url = imageObject.Url, // URL을 유지
-                    Base64String = base64String // Base64 문자열 추가
-                });
+                    var imageBytes = await httpClient.GetByteArrayAsync(imageUrl);
+                    var base64String = Convert.ToBase64String(imageBytes);
+
+                    imageBase64List.Add(new Base64ImageObject
+                    {
+                        Url = imageUrl,
+                        Base64String = base64String
+                    });
+                }
+                catch (Exception ex)
+                {
+                    // 로그 기록 또는 사용자에게 메시지 표시 등의 오류 처리를 여기에 추가
+                    System.Diagnostics.Debug.WriteLine($"Error fetching image from {imageUrl}: {ex.Message}");
+                }
             }
 
             return imageBase64List;
@@ -1036,7 +1121,7 @@ namespace Nop.Web.Areas.Admin.Controllers
             }
         }
 
-        private Dictionary<string, string> translationCache = new Dictionary<string, string>();
+        private Dictionary<string, string> _translationCache = new Dictionary<string, string>();
 
         // Google Translate API 번역 함수
         public async Task<string> TranslateTextAsync(string text, string sourceLanguage, string targetLanguage)
@@ -1085,9 +1170,9 @@ namespace Nop.Web.Areas.Admin.Controllers
 
             // 캐시에서 번역된 텍스트 확인
             var cacheKey = $"{sourceLanguage}-{targetLanguage}:{text}";
-            if (translationCache.ContainsKey(cacheKey))
+            if (_translationCache.ContainsKey(cacheKey))
             {
-                return translationCache[cacheKey];
+                return _translationCache[cacheKey];
             }
 
             try
@@ -1116,7 +1201,7 @@ namespace Nop.Web.Areas.Admin.Controllers
                     }
 
                     // 번역된 텍스트를 캐시에 저장
-                    translationCache[cacheKey] = translatedText;
+                    _translationCache[cacheKey] = translatedText;
 
                     return translatedText;
                 }
@@ -1138,7 +1223,7 @@ namespace Nop.Web.Areas.Admin.Controllers
             }
         }
 
-        private readonly Dictionary<int, string> targetLanguages = new Dictionary<int, string>
+        private readonly Dictionary<int, string> _targetLanguages = new Dictionary<int, string>
         {
             { 1, "en" },
             { 2, "ko" },
@@ -1162,7 +1247,7 @@ namespace Nop.Web.Areas.Admin.Controllers
             var baseText = typeof(TModel).GetProperty("Name").GetValue(model).ToString();
             var baseLanguage = await DetectLanguageAsync(baseText);
 
-            foreach (var lang in targetLanguages)
+            foreach (var lang in _targetLanguages)
             {
                 System.Diagnostics.Debug.WriteLine($"Processing translation for target language: {lang.Value}");
 
@@ -1240,269 +1325,327 @@ namespace Nop.Web.Areas.Admin.Controllers
                 localizedModels.Add(translatedModel);
             }
 
-            translationCache.Clear();  // 여기에서 캐시를 초기화
+            _translationCache.Clear();  // 여기에서 캐시를 초기화
 
             return localizedModels;
         }
 
         public virtual async Task<IActionResult> ApiCreate(bool continueEditing = false)
         {
-            // Call the method to get the product data from Taobao API
-            var productInfo = await GetProductsFromTaobaoAsync("衬裙");
-            var firstProductId = productInfo.First().Value;  // get the first product id
-            var firstUrl = productInfo.First().Key;  // get the first Url
-            var productData = await GetProductFromTaobaoAsync(firstProductId);
+            // 여러 카테고리 ID를 리스트로 생성합니다.
+            var categoryIds = new List<string> { "201310125", "201412701", "121380002" };
 
-            // Fill in the ProductModel with the data from Taobao API
-            var model = new ProductModel
+            // 전체 제품 정보를 저장할 리스트입니다.
+            var allProductInfoList = new List<ProductInfo>();
+
+            // 각 카테고리 ID로 제품 정보를 가져옵니다.
+            foreach (var categoryId in categoryIds)
             {
-                Id = 0,
-                Name = productData.Name,
-                Price = productData.Price,
-                FullDescription = $"<p>{productData.FullDescription}</p>",
-                Sku = firstUrl,
-                AvailableStartDateTimeUtc = DateTime.UtcNow,
-                // AvailableEndDateTimeUtc = DateTime.UtcNow.AddDays(30),
-                Published = true,
-                VisibleIndividually = true,
-                SelectedCategoryIds = new List<int> { 2 }, // You might need to map the categories from Taobao to your own categories
-                IsTaxExempt = false,
-                // TaxCategoryId = 4, // You might need to map the tax categories from Taobao to your own tax categories
-                NotifyAdminForQuantityBelow = 1,
-                BackorderModeId = 0,
-                AllowBackInStockSubscriptions = false,
-                OrderMinimumQuantity = 1,
-                // ... Fill in other fields as needed ...
-            };
-
-            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageProducts))
-                return AccessDeniedView();
-
-            //validate maximum number of products per vendor
-            var currentVendor = await _workContext.GetCurrentVendorAsync();
-            if (_vendorSettings.MaximumProductNumber > 0 && currentVendor != null
-                && await _productService.GetNumberOfProductsByVendorIdAsync(currentVendor.Id) >= _vendorSettings.MaximumProductNumber)
-            {
-                _notificationService.ErrorNotification(string.Format(await _localizationService.GetResourceAsync("Admin.Catalog.Products.ExceededMaximumNumber"),
-                    _vendorSettings.MaximumProductNumber));
-                return RedirectToAction("List");
+                var productInfoList = await GetProductsFromTaobaoAsync(categoryId, size: 2);
+                allProductInfoList.AddRange(productInfoList);
             }
 
-            if (ModelState.IsValid)
+            foreach (var productInfo in allProductInfoList)
             {
-                //a vendor should have access only to his products
-                if (currentVendor != null)
+                var productId = productInfo.Id;
+                var productUrl = productInfo.Url;
+                var productTitle = productInfo.Title;
+                var translatedValue = await TranslateTextAsync(productTitle, "en", "ko");
+
+                var productData = await GetProductFromTaobaoAsync(productId);
+
+                // Fill in the ProductModel with the data from Taobao API
+                var model = new ProductModel
                 {
-                    model.VendorId = currentVendor.Id;
-                }
-
-                //vendors cannot edit "Show on home page" property
-                if (currentVendor != null && model.ShowOnHomepage)
-                {
-                    model.ShowOnHomepage = false;
-                }
-
-                //product
-                var product = model.ToEntity<Product>();
-                product.CreatedOnUtc = DateTime.UtcNow;
-                product.UpdatedOnUtc = DateTime.UtcNow;
-                await _productService.InsertProductAsync(product);
-
-                // productData에서 이미지를 가져옵니다.
-                var imageBase64List = productData.ImageBase64List;
-
-                // 각 이미지를 처리합니다.
-                for (int i = 0; i < productData.ImageBase64List.Count; i++)
-                {
-                    var imageData = productData.ImageBase64List[i];
-
-                    // Base64 문자열을 바이트 배열로 변환합니다.
-                    var pictureBinary = Convert.FromBase64String(imageData.Base64String);
-
-                    // 이미지 URL에서 MIME 타입을 결정합니다.
-                    var mimeType = GetMimeTypeFromUrl(imageData.Url);
-                    var seoFilename = product.Name + System.IO.Path.GetExtension(imageData.Url); // System.IO.Path 사용
-
-                    // 사진을 삽입합니다.
-                    var picture = await _pictureService.InsertPictureAsync(pictureBinary, mimeType, seoFilename);
-
-                    // 사진의 SEO 파일명을 설정합니다.
-                    await _pictureService.SetSeoFilenameAsync(picture.Id, await _pictureService.GetPictureSeNameAsync(product.Name));
-
-                    // 제품과 사진을 연결합니다.
-                    await _productService.InsertProductPictureAsync(new ProductPicture
+                    Id = 0,
+                    Name = translatedValue,
+                    Price = productData.Price,
+                    FullDescription = $"<p>{productData.Description.Html}</p>",
+                    Sku = productUrl,
+                    AvailableStartDateTimeUtc = DateTime.UtcNow,
+                    Published = true,
+                    VisibleIndividually = true,
+                    SelectedCategoryIds = new List<int> { 14093 },
+                    IsTaxExempt = false,
+                    NotifyAdminForQuantityBelow = 1,
+                    BackorderModeId = 0,
+                    AllowBackInStockSubscriptions = false,
+                    OrderMinimumQuantity = 1,
+                    Locales = new List<ProductLocalizedModel>
                     {
-                        PictureId = picture.Id,
-                        ProductId = product.Id,
-                        DisplayOrder = i // 여기에서 인덱스를 DisplayOrder로 사용합니다.
-                    });
+                        new ProductLocalizedModel
+                        {
+                            LanguageId = 3, // 중국어의 LanguageId
+                            Name = productData.Title, // 원본 중국어 이름
+                        }
+                    }
+                };
+
+                if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageProducts))
+                    return AccessDeniedView();
+
+                //validate maximum number of products per vendor
+                var currentVendor = await _workContext.GetCurrentVendorAsync();
+                if (_vendorSettings.MaximumProductNumber > 0 && currentVendor != null
+                    && await _productService.GetNumberOfProductsByVendorIdAsync(currentVendor.Id) >= _vendorSettings.MaximumProductNumber)
+                {
+                    _notificationService.ErrorNotification(string.Format(await _localizationService.GetResourceAsync("Admin.Catalog.Products.ExceededMaximumNumber"),
+                        _vendorSettings.MaximumProductNumber));
+                    return RedirectToAction("List");
                 }
 
-                //search engine name
-                model.SeName = await _urlRecordService.ValidateSeNameAsync(product, model.SeName, product.Name, true);
-                await _urlRecordService.SaveSlugAsync(product, model.SeName, 0);
+                if (ModelState.IsValid)
+                {
+                    //a vendor should have access only to his products
+                    if (currentVendor != null)
+                    {
+                        model.VendorId = currentVendor.Id;
+                    }
 
-                //locales
-                await UpdateLocalesAsync(product, model);
+                    //vendors cannot edit "Show on home page" property
+                    if (currentVendor != null && model.ShowOnHomepage)
+                    {
+                        model.ShowOnHomepage = false;
+                    }
 
-                //categories
-                await SaveCategoryMappingsAsync(product, model);
+                    //product
+                    var product = model.ToEntity<Product>();
+                    product.CreatedOnUtc = DateTime.UtcNow;
+                    product.UpdatedOnUtc = DateTime.UtcNow;
+                    await _productService.InsertProductAsync(product);
 
-                //manufacturers
-                await SaveManufacturerMappingsAsync(product, model);
+                    // productData에서 이미지 URL 목록을 가져옵니다.
+                    var imageUrlList = productData.ItemImgs.Select(i => i.Url).ToList();
 
-                //ACL (customer roles)
-                await SaveProductAclAsync(product, model);
+                    // 이미지 URL들을 Base64로 변환합니다.
+                    var imageBase64List = await ConvertImagesToBase64Async(imageUrlList);
 
-                //stores
-                await _productService.UpdateProductStoreMappingsAsync(product, model.SelectedStoreIds);
+                    // 각 이미지를 처리합니다.
+                    for (int i = 0; i < imageBase64List.Count; i++)
+                    {
+                        var imageData = imageBase64List[i];
 
-                //discounts
-                await SaveDiscountMappingsAsync(product, model);
+                        // Base64 문자열을 바이트 배열로 변환합니다.
+                        var pictureBinary = Convert.FromBase64String(imageData.Base64String);
 
-                //tags
-                await _productTagService.UpdateProductTagsAsync(product, ParseProductTags(model.ProductTags));
+                        // 이미지 URL에서 MIME 타입을 결정합니다.
+                        var mimeType = GetMimeTypeFromUrl(imageData.Url);
+                        var seoFilename = product.Name + System.IO.Path.GetExtension(imageData.Url);
 
-                //warehouses
-                await SaveProductWarehouseInventoryAsync(product, model);
+                        // 사진을 삽입합니다.
+                        var picture = await _pictureService.InsertPictureAsync(pictureBinary, mimeType, seoFilename);
 
-                //quantity change history
-                await _productService.AddStockQuantityHistoryEntryAsync(product, product.StockQuantity, product.StockQuantity, product.WarehouseId,
-                    await _localizationService.GetResourceAsync("Admin.StockQuantityHistory.Messages.Edit"));
+                        // 사진의 SEO 파일명을 설정합니다.
+                        await _pictureService.SetSeoFilenameAsync(picture.Id, await _pictureService.GetPictureSeNameAsync(product.Name));
 
-                //activity log
-                await _customerActivityService.InsertActivityAsync("AddNewProduct",
-                    string.Format(await _localizationService.GetResourceAsync("ActivityLog.AddNewProduct"), product.Name), product);
+                        // 제품과 사진을 연결합니다.
+                        await _productService.InsertProductPictureAsync(new ProductPicture
+                        {
+                            PictureId = picture.Id,
+                            ProductId = product.Id,
+                            DisplayOrder = i
+                        });
+                    }
 
-                _notificationService.SuccessNotification(await _localizationService.GetResourceAsync("Admin.Catalog.Products.Added"));
+                    //search engine name
+                    model.SeName = await _urlRecordService.ValidateSeNameAsync(product, model.SeName, product.Name, true);
+                    await _urlRecordService.SaveSlugAsync(product, model.SeName, 0);
 
-                if (!continueEditing)
-                    return RedirectToAction("List");
+                    //locales
+                    await UpdateLocalesAsync(product, model);
 
-                return RedirectToAction("List");
+                    //categories
+                    await SaveCategoryMappingsAsync(product, model);
+
+                    //manufacturers
+                    await SaveManufacturerMappingsAsync(product, model);
+
+                    //ACL (customer roles)
+                    await SaveProductAclAsync(product, model);
+
+                    //stores
+                    await _productService.UpdateProductStoreMappingsAsync(product, model.SelectedStoreIds);
+
+                    //discounts
+                    await SaveDiscountMappingsAsync(product, model);
+
+                    //tags
+                    await _productTagService.UpdateProductTagsAsync(product, ParseProductTags(model.ProductTags));
+
+                    //warehouses
+                    await SaveProductWarehouseInventoryAsync(product, model);
+
+                    //quantity change history
+                    await _productService.AddStockQuantityHistoryEntryAsync(product, product.StockQuantity, product.StockQuantity, product.WarehouseId,
+                        await _localizationService.GetResourceAsync("Admin.StockQuantityHistory.Messages.Edit"));
+
+                    //activity log
+                    await _customerActivityService.InsertActivityAsync("AddNewProduct",
+                        string.Format(await _localizationService.GetResourceAsync("ActivityLog.AddNewProduct"), product.Name), product);
+
+                    _notificationService.SuccessNotification(await _localizationService.GetResourceAsync("Admin.Catalog.Products.Added"));
+                }
+                else
+                {
+                    //prepare model
+                    model = await _productModelFactory.PrepareProductModelAsync(model, null, true);
+
+                    //if we got this far, something failed, redisplay form
+                    return View(model);
+                }
             }
-            //prepare model
-            model = await _productModelFactory.PrepareProductModelAsync(model, null, true);
 
-            //if we got this far, something failed, redisplay form
-            return View(model);
+            return RedirectToAction("List");
         }
 
         [HttpPost, ParameterBasedOnFormName("save-api", "callApi")]
         public virtual async Task<IActionResult> ApiCreate(string query, bool continueEditing = false)
         {
-            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageProducts))
-                return AccessDeniedView();
-
-            //validate maximum number of products per vendor
-            var currentVendor = await _workContext.GetCurrentVendorAsync();
-            if (_vendorSettings.MaximumProductNumber > 0 && currentVendor != null
-                && await _productService.GetNumberOfProductsByVendorIdAsync(currentVendor.Id) >= _vendorSettings.MaximumProductNumber)
-            {
-                _notificationService.ErrorNotification(string.Format(await _localizationService.GetResourceAsync("Admin.Catalog.Products.ExceededMaximumNumber"),
-                    _vendorSettings.MaximumProductNumber));
-                return RedirectToAction("List");
-            }
-
             // Call the method to get the product data from Taobao API
-            var productIds = await GetProductsFromTaobaoAsync(query);
-            var firstProductId = productIds.First().Key;  // get the first product id
-            var productData = await GetProductFromTaobaoAsync(firstProductId);
+            var productInfoList = await GetProductsFromTaobaoAsync(query);
 
-            // Fill in the ProductModel with the data from Taobao API
-            var model = new ProductModel
+            foreach (var productInfo in productInfoList)
             {
-                Id = 0,
-                Name = productData.Name,
-                Price = productData.Price,
-                ShortDescription = $"<p>{productData.ShortDescription}</p>",
-                FullDescription = $"<p>{productData.FullDescription}</p>",
-                Sku = productData.Sku,
-                AvailableStartDateTimeUtc = DateTime.UtcNow,
-                AvailableEndDateTimeUtc = DateTime.UtcNow.AddDays(30),
-                Published = true,
-                VisibleIndividually = false,
-                SelectedCategoryIds = new List<int> { 2 }, // You might need to map the categories from Taobao to your own categories
-                IsTaxExempt = false,
-                TaxCategoryId = 4, // You might need to map the tax categories from Taobao to your own tax categories
-                NotifyAdminForQuantityBelow = 1,
-                BackorderModeId = 0,
-                AllowBackInStockSubscriptions = false,
-                OrderMinimumQuantity = 1,
-                // ... Fill in other fields as needed ...
-            };
-
-            if (ModelState.IsValid)
-            {
-                //a vendor should have access only to his products
-                if (currentVendor != null)
+                var productId = productInfo.Id;
+                var productUrl = productInfo.Url;
+                var productTitle = productInfo.Title;
+                var productData = await GetProductFromTaobaoAsync(productId);
+                // Fill in the ProductModel with the data from Taobao API
+                var model = new ProductModel
                 {
-                    model.VendorId = currentVendor.Id;
-                }
+                    Id = 0,
+                    Name = productData.Title,
+                    Price = productData.Price,
+                    FullDescription = $"<p>{productData.Description.Html}</p>",
+                    Sku = productUrl,
+                    AvailableStartDateTimeUtc = DateTime.UtcNow,
+                    Published = true,
+                    VisibleIndividually = true,
+                    SelectedCategoryIds = new List<int> { 14091 },
+                    IsTaxExempt = false,
+                    NotifyAdminForQuantityBelow = 1,
+                    BackorderModeId = 0,
+                    AllowBackInStockSubscriptions = false,
+                    OrderMinimumQuantity = 1,
 
-                //vendors cannot edit "Show on home page" property
-                if (currentVendor != null && model.ShowOnHomepage)
+                };
+
+                if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageProducts))
+                    return AccessDeniedView();
+
+                //validate maximum number of products per vendor
+                var currentVendor = await _workContext.GetCurrentVendorAsync();
+                if (_vendorSettings.MaximumProductNumber > 0 && currentVendor != null
+                    && await _productService.GetNumberOfProductsByVendorIdAsync(currentVendor.Id) >= _vendorSettings.MaximumProductNumber)
                 {
-                    model.ShowOnHomepage = false;
-                }
-
-                //product
-                var product = model.ToEntity<Product>();
-                product.CreatedOnUtc = DateTime.UtcNow;
-                product.UpdatedOnUtc = DateTime.UtcNow;
-                await _productService.InsertProductAsync(product);
-
-                //search engine name
-                model.SeName = await _urlRecordService.ValidateSeNameAsync(product, model.SeName, product.Name, true);
-                await _urlRecordService.SaveSlugAsync(product, model.SeName, 0);
-
-                //locales
-                await UpdateLocalesAsync(product, model);
-
-                //categories
-                await SaveCategoryMappingsAsync(product, model);
-
-                //manufacturers
-                await SaveManufacturerMappingsAsync(product, model);
-
-                //ACL (customer roles)
-                await SaveProductAclAsync(product, model);
-
-                //stores
-                await _productService.UpdateProductStoreMappingsAsync(product, model.SelectedStoreIds);
-
-                //discounts
-                await SaveDiscountMappingsAsync(product, model);
-
-                //tags
-                await _productTagService.UpdateProductTagsAsync(product, ParseProductTags(model.ProductTags));
-
-                //warehouses
-                await SaveProductWarehouseInventoryAsync(product, model);
-
-                //quantity change history
-                await _productService.AddStockQuantityHistoryEntryAsync(product, product.StockQuantity, product.StockQuantity, product.WarehouseId,
-                    await _localizationService.GetResourceAsync("Admin.StockQuantityHistory.Messages.Edit"));
-
-                //activity log
-                await _customerActivityService.InsertActivityAsync("AddNewProduct",
-                    string.Format(await _localizationService.GetResourceAsync("ActivityLog.AddNewProduct"), product.Name), product);
-
-                _notificationService.SuccessNotification(await _localizationService.GetResourceAsync("Admin.Catalog.Products.Added"));
-
-                if (!continueEditing)
+                    _notificationService.ErrorNotification(string.Format(await _localizationService.GetResourceAsync("Admin.Catalog.Products.ExceededMaximumNumber"),
+                        _vendorSettings.MaximumProductNumber));
                     return RedirectToAction("List");
+                }
 
-                return RedirectToAction("Edit", new { id = product.Id });
+                if (ModelState.IsValid)
+                {
+                    //a vendor should have access only to his products
+                    if (currentVendor != null)
+                    {
+                        model.VendorId = currentVendor.Id;
+                    }
+
+                    //vendors cannot edit "Show on home page" property
+                    if (currentVendor != null && model.ShowOnHomepage)
+                    {
+                        model.ShowOnHomepage = false;
+                    }
+
+                    //product
+                    var product = model.ToEntity<Product>();
+                    product.CreatedOnUtc = DateTime.UtcNow;
+                    product.UpdatedOnUtc = DateTime.UtcNow;
+                    await _productService.InsertProductAsync(product);
+
+                    // productData에서 이미지 URL 목록을 가져옵니다.
+                    var imageUrlList = productData.ItemImgs.Select(i => i.Url).ToList();
+
+                    // 이미지 URL들을 Base64로 변환합니다.
+                    var imageBase64List = await ConvertImagesToBase64Async(imageUrlList);
+
+                    // 각 이미지를 처리합니다.
+                    for (int i = 0; i < imageBase64List.Count; i++)
+                    {
+                        var imageData = imageBase64List[i];
+
+                        // Base64 문자열을 바이트 배열로 변환합니다.
+                        var pictureBinary = Convert.FromBase64String(imageData.Base64String);
+
+                        // 이미지 URL에서 MIME 타입을 결정합니다.
+                        var mimeType = GetMimeTypeFromUrl(imageData.Url);
+                        var seoFilename = product.Name + System.IO.Path.GetExtension(imageData.Url);
+
+                        // 사진을 삽입합니다.
+                        var picture = await _pictureService.InsertPictureAsync(pictureBinary, mimeType, seoFilename);
+
+                        // 사진의 SEO 파일명을 설정합니다.
+                        await _pictureService.SetSeoFilenameAsync(picture.Id, await _pictureService.GetPictureSeNameAsync(product.Name));
+
+                        // 제품과 사진을 연결합니다.
+                        await _productService.InsertProductPictureAsync(new ProductPicture
+                        {
+                            PictureId = picture.Id,
+                            ProductId = product.Id,
+                            DisplayOrder = i
+                        });
+                    }
+
+                    //search engine name
+                    model.SeName = await _urlRecordService.ValidateSeNameAsync(product, model.SeName, product.Name, true);
+                    await _urlRecordService.SaveSlugAsync(product, model.SeName, 0);
+
+                    //locales
+                    await UpdateLocalesAsync(product, model);
+
+                    //categories
+                    await SaveCategoryMappingsAsync(product, model);
+
+                    //manufacturers
+                    await SaveManufacturerMappingsAsync(product, model);
+
+                    //ACL (customer roles)
+                    await SaveProductAclAsync(product, model);
+
+                    //stores
+                    await _productService.UpdateProductStoreMappingsAsync(product, model.SelectedStoreIds);
+
+                    //discounts
+                    await SaveDiscountMappingsAsync(product, model);
+
+                    //tags
+                    await _productTagService.UpdateProductTagsAsync(product, ParseProductTags(model.ProductTags));
+
+                    //warehouses
+                    await SaveProductWarehouseInventoryAsync(product, model);
+
+                    //quantity change history
+                    await _productService.AddStockQuantityHistoryEntryAsync(product, product.StockQuantity, product.StockQuantity, product.WarehouseId,
+                        await _localizationService.GetResourceAsync("Admin.StockQuantityHistory.Messages.Edit"));
+
+                    //activity log
+                    await _customerActivityService.InsertActivityAsync("AddNewProduct",
+                        string.Format(await _localizationService.GetResourceAsync("ActivityLog.AddNewProduct"), product.Name), product);
+
+                    _notificationService.SuccessNotification(await _localizationService.GetResourceAsync("Admin.Catalog.Products.Added"));
+                }
+                else
+                {
+                    //prepare model
+                    model = await _productModelFactory.PrepareProductModelAsync(model, null, true);
+
+                    //if we got this far, something failed, redisplay form
+                    return View(model);
+                }
             }
 
-            //prepare model
-            model = await _productModelFactory.PrepareProductModelAsync(model, null, true);
-            //if we got this far, something failed, redisplay form
-
-            return View(model);
+            return RedirectToAction("List");
         }
-
 
         [HttpPost, ParameterBasedOnFormName("save-continue", "continueEditing")]
         public virtual async Task<IActionResult> Create(ProductModel model, bool continueEditing)

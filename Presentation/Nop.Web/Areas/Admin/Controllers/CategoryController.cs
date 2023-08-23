@@ -293,7 +293,7 @@ namespace Nop.Web.Areas.Admin.Controllers
             }
         }
 
-        private Dictionary<string, string> translationCache = new Dictionary<string, string>();
+        private Dictionary<string, string> _translationCache = new Dictionary<string, string>();
 
         // Google Translate API 번역 함수
         public async Task<string> TranslateTextAsync(string text, string sourceLanguage, string targetLanguage)
@@ -342,9 +342,9 @@ namespace Nop.Web.Areas.Admin.Controllers
 
             // 캐시에서 번역된 텍스트 확인
             var cacheKey = $"{sourceLanguage}-{targetLanguage}:{text}";
-            if (translationCache.ContainsKey(cacheKey))
+            if (_translationCache.ContainsKey(cacheKey))
             {
-                return translationCache[cacheKey];
+                return _translationCache[cacheKey];
             }
 
             try
@@ -373,7 +373,7 @@ namespace Nop.Web.Areas.Admin.Controllers
                     }
 
                     // 번역된 텍스트를 캐시에 저장
-                    translationCache[cacheKey] = translatedText;
+                    _translationCache[cacheKey] = translatedText;
 
                     return translatedText;
                 }
@@ -395,7 +395,7 @@ namespace Nop.Web.Areas.Admin.Controllers
             }
         }
 
-        private readonly Dictionary<int, string> targetLanguages = new Dictionary<int, string>
+        private readonly Dictionary<int, string> _targetLanguages = new Dictionary<int, string>
         {
             { 1, "en" },
             { 2, "ko" },
@@ -419,7 +419,7 @@ namespace Nop.Web.Areas.Admin.Controllers
             var baseText = typeof(TModel).GetProperty("Name").GetValue(model).ToString();
             var baseLanguage = await DetectLanguageAsync(baseText);
 
-            foreach (var lang in targetLanguages)
+            foreach (var lang in _targetLanguages)
             {
                 System.Diagnostics.Debug.WriteLine($"Processing translation for target language: {lang.Value}");
 
