@@ -26,7 +26,7 @@ namespace Nop.Web.Areas.Admin.Models.Catalog
         public string SearchCategoryName { get; set; }
 
         [NopResourceDisplayName("Admin.Catalog.Categories.List.SearchPublished")]
-        public int SearchPublishedId { get; set; }
+        public int SearchPublishedId { get; set; } = 1;
 
         public IList<SelectListItem> AvailablePublishedOptions { get; set; }
 

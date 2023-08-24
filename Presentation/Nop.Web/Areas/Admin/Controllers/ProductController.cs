@@ -1054,7 +1054,7 @@ namespace Nop.Web.Areas.Admin.Controllers
         }
 
         // URL에서 확장자를 가져와 MIME 타입을 반환하는 함수
-        string GetMimeTypeFromUrl(string url)
+        async Task<string> GetMimeTypeFromUrl(string url)
         {
             var extension = System.IO.Path.GetExtension(url).ToLowerInvariant(); // System.IO.Path 사용
 
@@ -1067,9 +1067,53 @@ namespace Nop.Web.Areas.Admin.Controllers
                     return "image/png";
                 case ".gif":
                     return "image/gif";
-                // 추가 확장자에 대한 처리
+                case ".bmp":
+                    return "image/bmp";
+                case ".webp":
+                    return "image/webp";
+                case ".tiff":
+                case ".tif":
+                    return "image/tiff";
+                case ".ico":
+                    return "image/x-icon";
+                case ".svg":
+                    return "image/svg+xml";
+                case ".heif":
+                case ".heic":
+                    return "image/heif";
+                // 필요한 경우 추가 확장자를 포함시킬 수 있습니다.
                 default:
-                    throw new NotSupportedException($"File extension {extension} is not supported");
+                    return await GetMimeTypeFromUrlAsync(url);
+            }
+        }
+
+        async Task<string> GetMimeTypeFromUrlAsync(string url)
+        {
+            using (var httpClient = new HttpClient())
+            {
+                // HEAD 요청을 사용하여 리소스의 헤더만 가져옴 (전체 콘텐츠를 가져오지 않음)
+                var request = new HttpRequestMessage(HttpMethod.Head, url);
+
+                try
+                {
+                    var response = await httpClient.SendAsync(request);
+
+                    // 응답이 성공적이고 Content-Type 헤더가 있으면 해당 값을 반환
+                    if (response.IsSuccessStatusCode && response.Content.Headers.Contains("Content-Type"))
+                    {
+                        return response.Content.Headers.GetValues("Content-Type").FirstOrDefault();
+                    }
+                    else
+                    {
+                        // 성공적인 응답이 아니거나 Content-Type 헤더가 없는 경우 기본값으로 반환
+                        return "application/octet-stream";
+                    }
+                }
+                catch
+                {
+                    // 요청 중 오류가 발생한 경우 기본값으로 반환
+                    return "application/octet-stream";
+                }
             }
         }
 
@@ -1332,20 +1376,17 @@ namespace Nop.Web.Areas.Admin.Controllers
 
         public virtual async Task<IActionResult> ApiCreate(bool continueEditing = false)
         {
-            // 여러 카테고리 ID를 리스트로 생성합니다.
-            var categoryIds = new List<string> { "201310125", "201412701", "121380002" };
+            // Call the method to get the product data from Taobao API
+            var productInfoList = await GetProductsFromTaobaoAsync("162205", size: 200);
+            var productInfoList2 = await GetProductsFromTaobaoAsync("50010167", size: 200);
+            var productInfoList3 = await GetProductsFromTaobaoAsync("201356651", size: 200);
+            //var productInfoList4 = await GetProductsFromTaobaoAsync("201356651", size: 200);
 
-            // 전체 제품 정보를 저장할 리스트입니다.
-            var allProductInfoList = new List<ProductInfo>();
+            productInfoList.AddRange(productInfoList2);
+            productInfoList.AddRange(productInfoList3);
+            //productInfoList.AddRange(productInfoList4);
 
-            // 각 카테고리 ID로 제품 정보를 가져옵니다.
-            foreach (var categoryId in categoryIds)
-            {
-                var productInfoList = await GetProductsFromTaobaoAsync(categoryId, size: 2);
-                allProductInfoList.AddRange(productInfoList);
-            }
-
-            foreach (var productInfo in allProductInfoList)
+            foreach (var productInfo in productInfoList)
             {
                 var productId = productInfo.Id;
                 var productUrl = productInfo.Url;
@@ -1358,14 +1399,16 @@ namespace Nop.Web.Areas.Admin.Controllers
                 var model = new ProductModel
                 {
                     Id = 0,
-                    Name = translatedValue,
+                    Name = string.IsNullOrEmpty(translatedValue) ? "값을 불러오지못했습니다." : translatedValue,
                     Price = productData.Price,
-                    FullDescription = $"<p>{productData.Description.Html}</p>",
-                    Sku = productUrl,
+                    FullDescription = productData.Description?.Html != null
+                                      ? $"<p>{productData.Description.Html}</p>"
+                                      : "<p>값을 불러오지못했습니다.</p>",
+                    Sku = string.IsNullOrEmpty(productUrl) ? "값을 불러오지못했습니다." : productUrl,
                     AvailableStartDateTimeUtc = DateTime.UtcNow,
                     Published = true,
                     VisibleIndividually = true,
-                    SelectedCategoryIds = new List<int> { 14093 },
+                    SelectedCategoryIds = new List<int> { 14094 },
                     IsTaxExempt = false,
                     NotifyAdminForQuantityBelow = 1,
                     BackorderModeId = 0,
@@ -1375,8 +1418,10 @@ namespace Nop.Web.Areas.Admin.Controllers
                     {
                         new ProductLocalizedModel
                         {
-                            LanguageId = 3, // 중국어의 LanguageId
-                            Name = productData.Title, // 원본 중국어 이름
+                            LanguageId = 3,
+                            Name = string.IsNullOrEmpty(productData.Title)
+                                   ? "값을 불러오지못했습니다."
+                                   : productData.Title
                         }
                     }
                 };
@@ -1429,7 +1474,7 @@ namespace Nop.Web.Areas.Admin.Controllers
                         var pictureBinary = Convert.FromBase64String(imageData.Base64String);
 
                         // 이미지 URL에서 MIME 타입을 결정합니다.
-                        var mimeType = GetMimeTypeFromUrl(imageData.Url);
+                        var mimeType = await GetMimeTypeFromUrl(imageData.Url);
                         var seoFilename = product.Name + System.IO.Path.GetExtension(imageData.Url);
 
                         // 사진을 삽입합니다.
@@ -1578,7 +1623,7 @@ namespace Nop.Web.Areas.Admin.Controllers
                         var pictureBinary = Convert.FromBase64String(imageData.Base64String);
 
                         // 이미지 URL에서 MIME 타입을 결정합니다.
-                        var mimeType = GetMimeTypeFromUrl(imageData.Url);
+                        var mimeType = await GetMimeTypeFromUrl(imageData.Url);
                         var seoFilename = product.Name + System.IO.Path.GetExtension(imageData.Url);
 
                         // 사진을 삽입합니다.
