@@ -6,7 +6,7 @@
   "compilationOptions": {
     "defines": [
       "TRACE",
-      "RELEASE",
+      "DEBUG",
       "NET",
       "NET7_0",
       "NETCOREAPP",
@@ -25,7 +25,7 @@
     "platform": "",
     "allowUnsafe": false,
     "warningsAsErrors": false,
-    "optimize": true,
+    "optimize": false,
     "keyFile": "",
     "emitEntryPoint": true,
     "xmlDoc": false,
@@ -35,10 +35,12 @@
     ".NETCoreApp,Version=v7.0": {
       "Nop.Web/4.5.0.0": {
         "dependencies": {
+          "HtmlAgilityPack": "1.11.51",
           "Nop.Core": "4.5.0",
           "Nop.Data": "4.5.0",
           "Nop.Services": "4.5.0",
           "Nop.Web.Framework": "4.5.0",
+          "RestSharp": "106.12.0",
           "Microsoft.AspNetCore.Antiforgery": "7.0.0.0",
           "Microsoft.AspNetCore.Authentication.Abstractions": "7.0.0.0",
           "Microsoft.AspNetCore.Authentication.Cookies": "7.0.0.0",
@@ -1012,6 +1014,17 @@
             "assetType": "native",
             "fileVersion": "0.0.0.0"
           }
+        }
+      },
+      "HtmlAgilityPack/1.11.51": {
+        "runtime": {
+          "lib/netstandard2.0/HtmlAgilityPack.dll": {
+            "assemblyVersion": "1.11.51.0",
+            "fileVersion": "1.11.51.0"
+          }
+        },
+        "compile": {
+          "lib/netstandard2.0/HtmlAgilityPack.dll": {}
         }
       },
       "Humanizer/2.14.1": {
@@ -2508,6 +2521,17 @@
         },
         "compile": {
           "lib/net6.0/QuestPDF.dll": {}
+        }
+      },
+      "RestSharp/106.12.0": {
+        "runtime": {
+          "lib/netstandard2.0/RestSharp.dll": {
+            "assemblyVersion": "106.12.0.0",
+            "fileVersion": "106.12.0.0"
+          }
+        },
+        "compile": {
+          "lib/netstandard2.0/RestSharp.dll": {}
         }
       },
       "runtime.debian.8-x64.runtime.native.System.Security.Cryptography.OpenSsl/4.3.2": {},
@@ -6116,6 +6140,13 @@
       "path": "harfbuzzsharp.nativeassets.win32/2.8.2.3",
       "hashPath": "harfbuzzsharp.nativeassets.win32.2.8.2.3.nupkg.sha512"
     },
+    "HtmlAgilityPack/1.11.51": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-yRn0Vd6Smu69xGyRWIZVl/Ley2OMMCMwC9tZRR/GdXfxGYj1sGMT4KskWd8OP9dGlqaXPkyB0NzBHKejtZdbow==",
+      "path": "htmlagilitypack/1.11.51",
+      "hashPath": "htmlagilitypack.1.11.51.nupkg.sha512"
+    },
     "Humanizer/2.14.1": {
       "type": "package",
       "serviceable": true,
@@ -6948,6 +6979,13 @@
       "sha512": "sha512-gjVKO9R4eHSsBG1MlprILzGOkJukQqCl6hGKtPWMGrBnfdn8CxWykNNU/Ogqw5jedN2ijZnv8hwvTw5rj/QP4A==",
       "path": "questpdf/2022.11.0",
       "hashPath": "questpdf.2022.11.0.nupkg.sha512"
+    },
+    "RestSharp/106.12.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-irOsQHe5nTJB0BKxGQnTX1dsgCPl5dLTxvL7gbl98JiFPiHMN4wpFyUG/66ZpaFCsIrPKh6XwozWXlwYe9JwYQ==",
+      "path": "restsharp/106.12.0",
+      "hashPath": "restsharp.106.12.0.nupkg.sha512"
     },
     "runtime.debian.8-x64.runtime.native.System.Security.Cryptography.OpenSsl/4.3.2": {
       "type": "package",

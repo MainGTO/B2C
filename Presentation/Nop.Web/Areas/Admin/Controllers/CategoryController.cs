@@ -116,8 +116,8 @@ namespace Nop.Web.Areas.Admin.Controllers
         protected virtual async Task UpdateLocalesAsync(Category category, CategoryModel model)
         {
             // Google Translate API
-            var localizedModels = await TranslateAndFillAsync<CategoryModel, CategoryLocalizedModel>(model);
-            model.Locales = localizedModels;
+            //var localizedModels = await TranslateAndFillAsync<CategoryModel, CategoryLocalizedModel>(model);
+            //model.Locales = localizedModels;
 
             foreach (var localized in model.Locales)
             {
@@ -250,7 +250,7 @@ namespace Nop.Web.Areas.Admin.Controllers
         {
             try
             {
-                var apiKey = "AIzaSyAuCUvfZYFLnPEiPLVbc__oV2MmfjFfFT0";  // 추후에 환경 변수나 구성 파일에서 읽어오는 것으로 구현
+                var apiKey = "AIzaSyBX9iR-8Xk0KdsMLcetDkophXpC3h-6NdQ";  // 추후에 환경 변수나 구성 파일에서 읽어오는 것으로 구현
                 var url = $"https://translation.googleapis.com/language/translate/v2/detect?key={apiKey}&q={text}";
 
                 using (HttpClient client = new HttpClient())
@@ -351,7 +351,7 @@ namespace Nop.Web.Areas.Admin.Controllers
             {
                 System.Diagnostics.Debug.WriteLine($"Translating text: {text} from {sourceLanguage} to {targetLanguage}");
 
-                var apiKey = "AIzaSyAuCUvfZYFLnPEiPLVbc__oV2MmfjFfFT0";  // 추후에 환경 변수나 구성 파일에서 읽어오는 것으로 구현
+                var apiKey = "AIzaSyBX9iR-8Xk0KdsMLcetDkophXpC3h-6NdQ";  // 추후에 환경 변수나 구성 파일에서 읽어오는 것으로 구현
                 var encodedText = HttpUtility.UrlEncode(text);
                 var url = $"https://translation.googleapis.com/language/translate/v2?source={sourceLanguage}&target={targetLanguage}&key={apiKey}&q={encodedText}";
 

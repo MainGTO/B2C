@@ -182,8 +182,8 @@ namespace Nop.Web.Areas.Admin.Controllers
         protected virtual async Task UpdateLocalesAsync(Product product, ProductModel model)
         {
             // Google Translate API
-            var localizedModels = await TranslateAndFillAsync<ProductModel, ProductLocalizedModel>(model);
-            model.Locales = localizedModels;
+            //var localizedModels = await TranslateAndFillAsync<ProductModel, ProductLocalizedModel>(model);
+            //model.Locales = localizedModels;
 
             foreach (var localized in model.Locales)
             {
@@ -221,8 +221,8 @@ namespace Nop.Web.Areas.Admin.Controllers
         protected virtual async Task UpdateLocalesAsync(ProductTag productTag, ProductTagModel model)
         {
             // Google Translate API
-            var localizedModels = await TranslateAndFillAsync<ProductTagModel, ProductTagLocalizedModel>(model);
-            model.Locales = localizedModels;
+            //var localizedModels = await TranslateAndFillAsync<ProductTagModel, ProductTagLocalizedModel>(model);
+            //model.Locales = localizedModels;
 
             foreach (var localized in model.Locales)
             {
@@ -239,8 +239,8 @@ namespace Nop.Web.Areas.Admin.Controllers
         protected virtual async Task UpdateLocalesAsync(ProductAttributeMapping pam, ProductAttributeMappingModel model)
         {
             // Google Translate API
-            var localizedModels = await TranslateAndFillAsync<ProductAttributeMappingModel, ProductAttributeMappingLocalizedModel>(model);
-            model.Locales = localizedModels;
+            //var localizedModels = await TranslateAndFillAsync<ProductAttributeMappingModel, ProductAttributeMappingLocalizedModel>(model);
+            //model.Locales = localizedModels;
 
             foreach (var localized in model.Locales)
             {
@@ -258,8 +258,8 @@ namespace Nop.Web.Areas.Admin.Controllers
         protected virtual async Task UpdateLocalesAsync(ProductAttributeValue pav, ProductAttributeValueModel model)
         {
             // Google Translate API
-            var localizedModels = await TranslateAndFillAsync<ProductAttributeValueModel, ProductAttributeValueLocalizedModel>(model);
-            model.Locales = localizedModels;
+            //var localizedModels = await TranslateAndFillAsync<ProductAttributeValueModel, ProductAttributeValueLocalizedModel>(model);
+            //model.Locales = localizedModels;
 
             foreach (var localized in model.Locales)
             {
