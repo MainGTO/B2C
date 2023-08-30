@@ -49,6 +49,7 @@ using Nop.Web.Framework.Validators;
 using RestSharp;
 using HtmlAgilityPack;
 using static Nop.Web.Areas.Admin.Controllers.ProductController;
+using System.Net.Http.Headers;
 
 namespace Nop.Web.Areas.Admin.Controllers
 {
@@ -179,11 +180,24 @@ namespace Nop.Web.Areas.Admin.Controllers
 
         #region Utilities
 
-        protected virtual async Task UpdateLocalesAsync(Product product, ProductModel model)
+        protected virtual async Task UpdateLocalesAsync(Product product, ProductModel model , bool api = false)
         {
+            // API 호출의 경우에는 아이템이름만 번역하기위해 나머지 번역대상은 지운다.
+            if (api)
+            {
+                foreach (var localized in model.Locales)
+                {
+                    localized.ShortDescription = null;
+                    localized.FullDescription = null;
+                    localized.MetaKeywords = null;
+                    localized.MetaDescription = null;
+                    localized.MetaTitle = null;
+                }
+            }
+
             // Google Translate API
-            //var localizedModels = await TranslateAndFillAsync<ProductModel, ProductLocalizedModel>(model);
-            //model.Locales = localizedModels;
+            var localizedModels = await TranslateAndFillAsync<ProductModel, ProductLocalizedModel>(model);
+            model.Locales = localizedModels;
 
             foreach (var localized in model.Locales)
             {
@@ -191,26 +205,31 @@ namespace Nop.Web.Areas.Admin.Controllers
                     x => x.Name,
                     localized.Name,
                     localized.LanguageId);
-                await _localizedEntityService.SaveLocalizedValueAsync(product,
-                    x => x.ShortDescription,
-                    localized.ShortDescription,
-                    localized.LanguageId);
-                await _localizedEntityService.SaveLocalizedValueAsync(product,
-                    x => x.FullDescription,
-                    localized.FullDescription,
-                    localized.LanguageId);
-                await _localizedEntityService.SaveLocalizedValueAsync(product,
-                    x => x.MetaKeywords,
-                    localized.MetaKeywords,
-                    localized.LanguageId);
-                await _localizedEntityService.SaveLocalizedValueAsync(product,
-                    x => x.MetaDescription,
-                    localized.MetaDescription,
-                    localized.LanguageId);
-                await _localizedEntityService.SaveLocalizedValueAsync(product,
-                    x => x.MetaTitle,
-                    localized.MetaTitle,
-                    localized.LanguageId);
+
+                // Api 호출일경우에는 번역을 최소화하기위해서 나머지 필드는 제외한다.
+                if (!api)
+                {
+                    await _localizedEntityService.SaveLocalizedValueAsync(product,
+                        x => x.ShortDescription,
+                        localized.ShortDescription,
+                        localized.LanguageId);
+                    await _localizedEntityService.SaveLocalizedValueAsync(product,
+                        x => x.FullDescription,
+                        localized.FullDescription,
+                        localized.LanguageId);
+                    await _localizedEntityService.SaveLocalizedValueAsync(product,
+                        x => x.MetaKeywords,
+                        localized.MetaKeywords,
+                        localized.LanguageId);
+                    await _localizedEntityService.SaveLocalizedValueAsync(product,
+                        x => x.MetaDescription,
+                        localized.MetaDescription,
+                        localized.LanguageId);
+                    await _localizedEntityService.SaveLocalizedValueAsync(product,
+                        x => x.MetaTitle,
+                        localized.MetaTitle,
+                        localized.LanguageId);
+                }
 
                 //search engine name
                 var seName = await _urlRecordService.ValidateSeNameAsync(product, localized.SeName, localized.Name, false);
@@ -779,82 +798,7 @@ namespace Nop.Web.Areas.Admin.Controllers
 
         #region Methods
 
-        #region Product list / create / edit / delete
-
-        public virtual IActionResult Index()
-        {
-            return RedirectToAction("List");
-        }
-
-        public virtual async Task<IActionResult> List()
-        {
-            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageProducts))
-                return AccessDeniedView();
-
-            //prepare model
-            var model = await _productModelFactory.PrepareProductSearchModelAsync(new ProductSearchModel());
-
-            return View(model);
-        }
-
-        [HttpPost]
-        public virtual async Task<IActionResult> ProductList(ProductSearchModel searchModel)
-        {
-            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageProducts))
-                return await AccessDeniedDataTablesJson();
-
-            //prepare model
-            var model = await _productModelFactory.PrepareProductListModelAsync(searchModel);
-
-            return Json(model);
-        }
-
-        [HttpPost, ActionName("List")]
-        [FormValueRequired("go-to-product-by-sku")]
-        public virtual async Task<IActionResult> GoToSku(ProductSearchModel searchModel)
-        {
-            //try to load a product entity, if not found, then try to load a product attribute combination
-            var productId = (await _productService.GetProductBySkuAsync(searchModel.GoDirectlyToSku))?.Id
-                ?? (await _productAttributeService.GetProductAttributeCombinationBySkuAsync(searchModel.GoDirectlyToSku))?.ProductId;
-
-            if (productId != null)
-                return RedirectToAction("Edit", "Product", new { id = productId });
-
-            //not found
-            return await List();
-        }
-
-        public virtual async Task<IActionResult> Create(bool showtour = false)
-        {
-            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageProducts))
-                return AccessDeniedView();
-
-            //validate maximum number of products per vendor
-            var currentVendor = await _workContext.GetCurrentVendorAsync();
-            if (_vendorSettings.MaximumProductNumber > 0 && currentVendor != null
-                && await _productService.GetNumberOfProductsByVendorIdAsync(currentVendor.Id) >= _vendorSettings.MaximumProductNumber)
-            {
-                _notificationService.ErrorNotification(string.Format(await _localizationService.GetResourceAsync("Admin.Catalog.Products.ExceededMaximumNumber"),
-                    _vendorSettings.MaximumProductNumber));
-                return RedirectToAction("List");
-            }
-
-            //prepare model
-            var model = await _productModelFactory.PrepareProductModelAsync(new ProductModel(), null);
-
-            //show configuration tour
-            if (showtour)
-            {
-                var customer = await _workContext.GetCurrentCustomerAsync();
-                var hideCard = await _genericAttributeService.GetAttributeAsync<bool>(customer, NopCustomerDefaults.HideConfigurationStepsAttribute);
-                var closeCard = await _genericAttributeService.GetAttributeAsync<bool>(customer, NopCustomerDefaults.CloseConfigurationStepsAttribute);
-
-                if (!hideCard && !closeCard)
-                    ViewBag.ShowTour = true;
-            }
-
-            return View(model);
-        }
+        #region SaveImages
 
         public class ImageData
         {
@@ -867,6 +811,388 @@ namespace Nop.Web.Areas.Admin.Controllers
             public string Url { get; set; }
             public string Base64String { get; set; } // 추가
         }
+
+        // URL에서 확장자를 가져와 MIME 타입을 반환하는 함수
+        async Task<string> GetMimeTypeFromUrl(string url)
+        {
+            var extension = System.IO.Path.GetExtension(url).ToLowerInvariant(); // System.IO.Path 사용
+
+            switch (extension)
+            {
+                case ".jpg":
+                case ".jpeg":
+                    return "image/jpeg";
+                case ".png":
+                    return "image/png";
+                case ".gif":
+                    return "image/gif";
+                case ".bmp":
+                    return "image/bmp";
+                case ".webp":
+                    return "image/webp";
+                case ".tiff":
+                case ".tif":
+                    return "image/tiff";
+                case ".ico":
+                    return "image/x-icon";
+                case ".svg":
+                    return "image/svg+xml";
+                case ".heif":
+                case ".heic":
+                    return "image/heif";
+                // 필요한 경우 추가 확장자를 포함시킬 수 있습니다.
+                default:
+                    return await GetMimeTypeFromUrlAsync(url);
+            }
+        }
+
+        async Task<string> GetMimeTypeFromUrlAsync(string url)
+        {
+            using (var httpClient = new HttpClient())
+            {
+                // HEAD 요청을 사용하여 리소스의 헤더만 가져옴 (전체 콘텐츠를 가져오지 않음)
+                var request = new HttpRequestMessage(HttpMethod.Head, url);
+
+                try
+                {
+                    var response = await httpClient.SendAsync(request);
+
+                    // 응답이 성공적이고 Content-Type 헤더가 있으면 해당 값을 반환
+                    if (response.IsSuccessStatusCode && response.Content.Headers.Contains("Content-Type"))
+                    {
+                        return response.Content.Headers.GetValues("Content-Type").FirstOrDefault();
+                    }
+                    else
+                    {
+                        // 성공적인 응답이 아니거나 Content-Type 헤더가 없는 경우 기본값으로 반환
+                        return "application/octet-stream";
+                    }
+                }
+                catch
+                {
+                    // 요청 중 오류가 발생한 경우 기본값으로 반환
+                    return "application/octet-stream";
+                }
+            }
+        }
+
+        private async Task<List<Base64ImageObject>> ConvertImagesToBase64Async(List<string> imageUrlList)
+        {
+            var imageBase64List = new List<Base64ImageObject>();
+            var httpClient = _httpClientFactory.CreateClient();
+
+            foreach (var imageUrl in imageUrlList)
+            {
+                try
+                {
+                    var imageBytes = await httpClient.GetByteArrayAsync(imageUrl);
+                    var base64String = Convert.ToBase64String(imageBytes);
+
+                    imageBase64List.Add(new Base64ImageObject
+                    {
+                        Url = imageUrl,
+                        Base64String = base64String
+                    });
+                }
+                catch (Exception ex)
+                {
+                    // 로그 기록 또는 사용자에게 메시지 표시 등의 오류 처리를 여기에 추가
+                    System.Diagnostics.Debug.WriteLine($"Error fetching image from {imageUrl}: {ex.Message}");
+                }
+            }
+
+            return imageBase64List;
+        }
+
+        #endregion
+
+        #region Translate Google
+
+        // Google Translate API 대상 텍스트 언어 감지
+        public async Task<string> DetectLanguageAsync(string text)
+        {
+            try
+            {
+                var apiKey = "AIzaSyAuCUvfZYFLnPEiPLVbc__oV2MmfjFfFT0";  // 추후에 환경 변수나 구성 파일에서 읽어오는 것으로 구현
+                var url = $"https://translation.googleapis.com/language/translate/v2/detect?key={apiKey}&q={text}";
+
+                using (HttpClient client = new HttpClient())
+                {
+                    System.Diagnostics.Debug.WriteLine($"Detecting language for text: {text}");
+
+                    var response = await client.GetAsync(url);
+                    response.EnsureSuccessStatusCode();
+
+                    var jsonResponse = await response.Content.ReadAsStringAsync();
+                    var jsonObject = JObject.Parse(jsonResponse);
+
+                    var detectedLanguage = jsonObject["data"]["detections"][0][0]["language"].ToString();
+
+                    // 만약 감지된 언어가 "zh-"로 시작하면 "zh-CN"으로 강제 설정
+                    if (detectedLanguage.StartsWith("zh-"))
+                    {
+                        detectedLanguage = "zh-CN";
+                    }
+                    // 만약 감지된 언어가 "ar-Latn"이면 "ar"로 강제 설정
+                    else if (detectedLanguage == "ar-Latn")
+                    {
+                        detectedLanguage = "ar";
+                    }
+
+                    return detectedLanguage;
+                }
+            }
+            catch (HttpRequestException ex)
+            {
+                throw new Exception($"Google Translate API 호출 중 오류 발생: {ex.Message}");
+            }
+            catch (JsonReaderException ex)
+            {
+                throw new Exception($"JSON 파싱 중 오류 발생: {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"서버 내부 오류: {ex.Message}");
+            }
+        }
+
+        private Dictionary<string, string> _translationCache = new Dictionary<string, string>();
+
+        // Google Translate API 번역 함수
+        public async Task<string> TranslateTextAsync(string text, string sourceLanguage, string targetLanguage)
+        {
+            // 지원하는 언어 목록
+            var supportedLanguages = new HashSet<string>
+            {
+                "af", "sq", "am", "ar", "hy", "as", "ay", "az", "bm", "eu", "be", "bn",
+                "bho", "bs", "bg", "ca", "ceb", "zh-CN", "zh-TW", "co", "hr", "cs", "da",
+                "dv", "doi", "nl", "en", "eo", "et", "ee", "fil", "fi", "fr", "fy", "gl",
+                "ka", "de", "el", "gn", "gu", "ht", "ha", "haw", "he", "hi", "hmn", "hu",
+                "is", "ig", "ilo", "id", "ga", "it", "ja", "jv", "kn", "kk", "km", "rw",
+                "gom", "ko", "kri", "ku", "ckb", "ky", "lo", "la", "lv", "ln", "lt", "lg",
+                "lb", "mk", "mai", "mg", "ms", "ml", "mt", "mi", "mr", "mni-Mtei", "lus",
+                "mn", "my", "ne", "no", "ny", "or", "om", "ps", "fa", "pl", "pt", "pa",
+                "qu", "ro", "ru", "sm", "sa", "gd", "nso", "sr", "st", "sn", "sd", "si",
+                "sk", "sl", "so", "es", "su", "sw", "sv", "tl", "tg", "ta", "tt", "te",
+                "th", "ti", "ts", "tr", "tk", "ak", "uk", "ur", "ug", "uz", "vi", "cy",
+                "xh", "yi", "yo", "zu"
+            };
+
+            // BCP-47 태그에서 기본 언어 코드만 추출
+            string convertSpecialLanguageCodes(string langTag)
+            {
+                // 특정 언어 태그에 대해 특별한 처리
+                switch (langTag)
+                {
+                    case "zh-CN":
+                        return "zh";
+                    case "zh-TW":
+                        return "zh";
+                    default:
+                        return langTag.Split('-')[0];
+                }
+            }
+
+            var primarySourceLanguage = convertSpecialLanguageCodes(sourceLanguage);
+            var primaryTargetLanguage = convertSpecialLanguageCodes(targetLanguage);
+
+            // sourceLanguage와 targetLanguage가 지원하는 언어인지 확인
+            if (!supportedLanguages.Contains(primarySourceLanguage) || !supportedLanguages.Contains(primaryTargetLanguage))
+            {
+                var errorMessage = $"Translating text: {text} from {sourceLanguage} to {targetLanguage} [에러(ERROR)]";
+                return $"{text} {errorMessage}";
+            }
+
+            // 캐시에서 번역된 텍스트 확인
+            var cacheKey = $"{sourceLanguage}-{targetLanguage}:{text}";
+            if (_translationCache.ContainsKey(cacheKey))
+            {
+                return _translationCache[cacheKey];
+            }
+
+            try
+            {
+                System.Diagnostics.Debug.WriteLine($"Translating text: {text} from {sourceLanguage} to {targetLanguage}");
+
+                var apiKey = "AIzaSyAuCUvfZYFLnPEiPLVbc__oV2MmfjFfFT0";  // 추후에 환경 변수나 구성 파일에서 읽어오는 것으로 구현
+                var encodedText = HttpUtility.UrlEncode(text);
+                var url = $"https://translation.googleapis.com/language/translate/v2?source={sourceLanguage}&target={targetLanguage}&key={apiKey}&q={encodedText}";
+
+                using (HttpClient client = new HttpClient())
+                {
+                    var response = await client.GetAsync(url);
+                    response.EnsureSuccessStatusCode();
+
+                    var jsonResponse = await response.Content.ReadAsStringAsync();
+                    var jsonObject = JObject.Parse(jsonResponse);
+
+                    // "translatedText" 값을 안전하게 추출
+                    var translatedText = jsonObject["data"]?["translations"]?[0]?["translatedText"]?.ToString();
+
+                    if (translatedText == null)
+                    {
+                        var errorMessage = $"Google Translate API에서 예상치 못한 응답을 받았습니다. Translating text: {text} from {sourceLanguage} to {targetLanguage} [에러(ERROR)]";
+                        return $"{text} {errorMessage}";
+                    }
+
+                    // 번역된 텍스트를 캐시에 저장
+                    _translationCache[cacheKey] = translatedText;
+
+                    return translatedText;
+                }
+            }
+            catch (HttpRequestException ex)
+            {
+                var errorMessage = $"Google Translate API 호출 중 오류 발생: {ex.Message}. Translating text: {text} from {sourceLanguage} to {targetLanguage} [에러(ERROR)]";
+                return $"{text} {errorMessage}";
+            }
+            catch (JsonReaderException ex)
+            {
+                var errorMessage = $"JSON 파싱 중 오류 발생: {ex.Message}. Translating text: {text} from {sourceLanguage} to {targetLanguage} [에러(ERROR)]";
+                return $"{text} {errorMessage}";
+            }
+            catch (Exception ex)
+            {
+                var errorMessage = $"서버 내부 오류: {ex.Message}. Translating text: {text} from {sourceLanguage} to {targetLanguage} [에러(ERROR)]";
+                return $"{text} {errorMessage}";
+            }
+        }
+
+        private readonly Dictionary<int, string> _targetLanguages = new Dictionary<int, string>
+        {
+            { 1, "en" },
+            { 2, "ko" },
+            { 3, "zh-CN" },
+            { 4, "vi" },
+            { 5, "th" },
+            // 추가 언어 가능
+        };
+
+        // Google Translate API Main
+        public async Task<List<TResult>> TranslateAndFillAsync<TModel, TResult>(TModel model)
+                       where TModel : class
+                       where TResult : class, new()
+        {
+            System.Diagnostics.Debug.WriteLine("Starting translation process for provided model.");
+
+            var localizedModels = new List<TResult>();
+            var baseProperties = typeof(TModel).GetProperties().Where(p => p.PropertyType == typeof(string) && p.Name != "Description" && p.Name != "PageSizeOptions");
+
+            // 기준 언어 감지 (Name 속성을 기준으로 함)
+            var baseText = typeof(TModel).GetProperty("Name").GetValue(model).ToString();
+            var baseLanguage = await DetectLanguageAsync(baseText);
+
+            foreach (var lang in _targetLanguages)
+            {
+                System.Diagnostics.Debug.WriteLine($"Processing translation for target language: {lang.Value}");
+
+                // 중국어 데이터가 이미 존재하는 경우 번역을 건너뜀
+                if (lang.Value == "zh-CN" && model is CategoryModel categoryModel)
+                {
+                    var existingChineseData = categoryModel.Locales.FirstOrDefault(l => l.LanguageId == 3);
+                    if (existingChineseData != null && !string.IsNullOrWhiteSpace(existingChineseData.Name))
+                    {
+                        var chineseDataCopy = new TResult();
+                        foreach (var prop in typeof(TResult).GetProperties())
+                        {
+                            if (prop.CanWrite)
+                            {
+                                prop.SetValue(chineseDataCopy, prop.GetValue(existingChineseData));
+                            }
+                        }
+                        localizedModels.Add(chineseDataCopy);
+                        continue;
+                    }
+                }
+
+                var translatedModel = new TResult();
+
+                // 언어 ID 설정.
+                typeof(TResult).GetProperty("LanguageId")?.SetValue(translatedModel, lang.Key);
+
+                if (baseLanguage != lang.Value)
+                {
+                    foreach (var property in baseProperties)
+                    {
+                        var originalValue = (string)property.GetValue(model);
+
+                        // 값이 없으면 번역하지 않고 진행
+                        if (string.IsNullOrEmpty(originalValue))
+                            continue;
+
+                        string translatedValue;
+
+                        if (baseLanguage == lang.Value || baseLanguage == "en")
+                        {
+                            // 원본 언어와 목표 언어가 동일하거나 원본 언어가 영어인 경우 번역하지 않고 원본 값을 사용
+                            translatedValue = originalValue;
+                        }
+                        else 
+                        {
+                            // 그 다음 원하는 언어로 번역
+                            translatedValue = await DeppLTranslateTextAsync(originalValue, "auto", lang.Value, true);
+                        }
+
+                        // TResult에 해당 속성이 있는지 확인하고 설정
+                        var resultProperty = typeof(TResult).GetProperty(property.Name);
+                        if (resultProperty != null && resultProperty.PropertyType == typeof(string))
+                        {
+                            resultProperty.SetValue(translatedModel, translatedValue);
+                        }
+                    }
+                }
+                else
+                {
+                    foreach (var property in baseProperties)
+                    {
+                        var originalValue = (string)property.GetValue(model);
+                        typeof(TResult).GetProperty(property.Name)?.SetValue(translatedModel, originalValue);
+                    }
+                }
+
+                localizedModels.Add(translatedModel);
+            }
+
+            _translationCache.Clear();  // 여기에서 캐시를 초기화
+
+            return localizedModels;
+        }
+
+        #endregion
+
+        #region Translate DeppL
+
+        public async Task<string> DeppLTranslateTextAsync(string text, string sourceLanguage, string targetLanguage, bool isFreeAccount = false)
+        {
+            var authKey = "f2fc50f9-4601-cfc5-9eec-576e8a73cf41:fx";  // DeepL의 Auth Key
+
+            var baseUrl = isFreeAccount ? "https://api-free.deepl.com/v2/translate" : "https://api.deepl.com/v2/translate";
+
+            using (HttpClient client = new HttpClient())
+            {
+                var postData = new List<KeyValuePair<string, string>>();
+                postData.Add(new KeyValuePair<string, string>("text", text));
+                postData.Add(new KeyValuePair<string, string>("source_lang", sourceLanguage == "auto" ? "auto" : sourceLanguage.ToUpper()));
+                postData.Add(new KeyValuePair<string, string>("target_lang", targetLanguage.ToUpper()));
+                postData.Add(new KeyValuePair<string, string>("auth_key", authKey));
+
+                var content = new FormUrlEncodedContent(postData);
+
+                var response = await client.PostAsync(baseUrl, content);
+                response.EnsureSuccessStatusCode();
+
+                var jsonResponse = await response.Content.ReadAsStringAsync();
+                var jsonObject = JObject.Parse(jsonResponse);
+
+                var translatedText = jsonObject["translations"][0]["text"].ToString();
+
+                return translatedText;
+            }
+        }
+
+        #endregion
+
+        #region ApiTaobao
 
         public class TaobaoProductInfo
         {
@@ -1025,365 +1351,16 @@ namespace Nop.Web.Areas.Admin.Controllers
             return productInfo;
         }
 
-        private async Task<List<Base64ImageObject>> ConvertImagesToBase64Async(List<string> imageUrlList)
-        {
-            var imageBase64List = new List<Base64ImageObject>();
-            var httpClient = _httpClientFactory.CreateClient();
-
-            foreach (var imageUrl in imageUrlList)
-            {
-                try
-                {
-                    var imageBytes = await httpClient.GetByteArrayAsync(imageUrl);
-                    var base64String = Convert.ToBase64String(imageBytes);
-
-                    imageBase64List.Add(new Base64ImageObject
-                    {
-                        Url = imageUrl,
-                        Base64String = base64String
-                    });
-                }
-                catch (Exception ex)
-                {
-                    // 로그 기록 또는 사용자에게 메시지 표시 등의 오류 처리를 여기에 추가
-                    System.Diagnostics.Debug.WriteLine($"Error fetching image from {imageUrl}: {ex.Message}");
-                }
-            }
-
-            return imageBase64List;
-        }
-
-        // URL에서 확장자를 가져와 MIME 타입을 반환하는 함수
-        async Task<string> GetMimeTypeFromUrl(string url)
-        {
-            var extension = System.IO.Path.GetExtension(url).ToLowerInvariant(); // System.IO.Path 사용
-
-            switch (extension)
-            {
-                case ".jpg":
-                case ".jpeg":
-                    return "image/jpeg";
-                case ".png":
-                    return "image/png";
-                case ".gif":
-                    return "image/gif";
-                case ".bmp":
-                    return "image/bmp";
-                case ".webp":
-                    return "image/webp";
-                case ".tiff":
-                case ".tif":
-                    return "image/tiff";
-                case ".ico":
-                    return "image/x-icon";
-                case ".svg":
-                    return "image/svg+xml";
-                case ".heif":
-                case ".heic":
-                    return "image/heif";
-                // 필요한 경우 추가 확장자를 포함시킬 수 있습니다.
-                default:
-                    return await GetMimeTypeFromUrlAsync(url);
-            }
-        }
-
-        async Task<string> GetMimeTypeFromUrlAsync(string url)
-        {
-            using (var httpClient = new HttpClient())
-            {
-                // HEAD 요청을 사용하여 리소스의 헤더만 가져옴 (전체 콘텐츠를 가져오지 않음)
-                var request = new HttpRequestMessage(HttpMethod.Head, url);
-
-                try
-                {
-                    var response = await httpClient.SendAsync(request);
-
-                    // 응답이 성공적이고 Content-Type 헤더가 있으면 해당 값을 반환
-                    if (response.IsSuccessStatusCode && response.Content.Headers.Contains("Content-Type"))
-                    {
-                        return response.Content.Headers.GetValues("Content-Type").FirstOrDefault();
-                    }
-                    else
-                    {
-                        // 성공적인 응답이 아니거나 Content-Type 헤더가 없는 경우 기본값으로 반환
-                        return "application/octet-stream";
-                    }
-                }
-                catch
-                {
-                    // 요청 중 오류가 발생한 경우 기본값으로 반환
-                    return "application/octet-stream";
-                }
-            }
-        }
-
-        // Google Translate API 대상 텍스트 언어 감지
-        public async Task<string> DetectLanguageAsync(string text)
-        {
-            try
-            {
-                var apiKey = "AIzaSyAuCUvfZYFLnPEiPLVbc__oV2MmfjFfFT0";  // 추후에 환경 변수나 구성 파일에서 읽어오는 것으로 구현
-                var url = $"https://translation.googleapis.com/language/translate/v2/detect?key={apiKey}&q={text}";
-
-                using (HttpClient client = new HttpClient())
-                {
-                    System.Diagnostics.Debug.WriteLine($"Detecting language for text: {text}");
-
-                    var response = await client.GetAsync(url);
-                    response.EnsureSuccessStatusCode();
-
-                    var jsonResponse = await response.Content.ReadAsStringAsync();
-                    var jsonObject = JObject.Parse(jsonResponse);
-
-                    var detectedLanguage = jsonObject["data"]["detections"][0][0]["language"].ToString();
-
-                    // 만약 감지된 언어가 "zh-"로 시작하면 "zh-CN"으로 강제 설정
-                    if (detectedLanguage.StartsWith("zh-"))
-                    {
-                        detectedLanguage = "zh-CN";
-                    }
-                    // 만약 감지된 언어가 "ar-Latn"이면 "ar"로 강제 설정
-                    else if (detectedLanguage == "ar-Latn")
-                    {
-                        detectedLanguage = "ar";
-                    }
-
-                    return detectedLanguage;
-                }
-            }
-            catch (HttpRequestException ex)
-            {
-                throw new Exception($"Google Translate API 호출 중 오류 발생: {ex.Message}");
-            }
-            catch (JsonReaderException ex)
-            {
-                throw new Exception($"JSON 파싱 중 오류 발생: {ex.Message}");
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"서버 내부 오류: {ex.Message}");
-            }
-        }
-
-        private Dictionary<string, string> _translationCache = new Dictionary<string, string>();
-
-        // Google Translate API 번역 함수
-        public async Task<string> TranslateTextAsync(string text, string sourceLanguage, string targetLanguage)
-        {
-            // 지원하는 언어 목록
-            var supportedLanguages = new HashSet<string>
-            {
-                "af", "sq", "am", "ar", "hy", "as", "ay", "az", "bm", "eu", "be", "bn",
-                "bho", "bs", "bg", "ca", "ceb", "zh-CN", "zh-TW", "co", "hr", "cs", "da",
-                "dv", "doi", "nl", "en", "eo", "et", "ee", "fil", "fi", "fr", "fy", "gl",
-                "ka", "de", "el", "gn", "gu", "ht", "ha", "haw", "he", "hi", "hmn", "hu",
-                "is", "ig", "ilo", "id", "ga", "it", "ja", "jv", "kn", "kk", "km", "rw",
-                "gom", "ko", "kri", "ku", "ckb", "ky", "lo", "la", "lv", "ln", "lt", "lg",
-                "lb", "mk", "mai", "mg", "ms", "ml", "mt", "mi", "mr", "mni-Mtei", "lus",
-                "mn", "my", "ne", "no", "ny", "or", "om", "ps", "fa", "pl", "pt", "pa",
-                "qu", "ro", "ru", "sm", "sa", "gd", "nso", "sr", "st", "sn", "sd", "si",
-                "sk", "sl", "so", "es", "su", "sw", "sv", "tl", "tg", "ta", "tt", "te",
-                "th", "ti", "ts", "tr", "tk", "ak", "uk", "ur", "ug", "uz", "vi", "cy",
-                "xh", "yi", "yo", "zu"
-            };
-
-            // BCP-47 태그에서 기본 언어 코드만 추출
-            string convertSpecialLanguageCodes(string langTag)
-            {
-                // 특정 언어 태그에 대해 특별한 처리
-                switch (langTag)
-                {
-                    case "zh-CN":
-                        return "zh-CN";
-                    case "zh-TW":
-                        return "zh-TW";
-                    default:
-                        return langTag.Split('-')[0];
-                }
-            }
-
-            var primarySourceLanguage = convertSpecialLanguageCodes(sourceLanguage);
-            var primaryTargetLanguage = convertSpecialLanguageCodes(targetLanguage);
-
-            // sourceLanguage와 targetLanguage가 지원하는 언어인지 확인
-            if (!supportedLanguages.Contains(primarySourceLanguage) || !supportedLanguages.Contains(primaryTargetLanguage))
-            {
-                var errorMessage = $"Translating text: {text} from {sourceLanguage} to {targetLanguage} [에러(ERROR)]";
-                return $"{text} {errorMessage}";
-            }
-
-            // 캐시에서 번역된 텍스트 확인
-            var cacheKey = $"{sourceLanguage}-{targetLanguage}:{text}";
-            if (_translationCache.ContainsKey(cacheKey))
-            {
-                return _translationCache[cacheKey];
-            }
-
-            try
-            {
-                System.Diagnostics.Debug.WriteLine($"Translating text: {text} from {sourceLanguage} to {targetLanguage}");
-
-                var apiKey = "AIzaSyAuCUvfZYFLnPEiPLVbc__oV2MmfjFfFT0";  // 추후에 환경 변수나 구성 파일에서 읽어오는 것으로 구현
-                var encodedText = HttpUtility.UrlEncode(text);
-                var url = $"https://translation.googleapis.com/language/translate/v2?source={sourceLanguage}&target={targetLanguage}&key={apiKey}&q={encodedText}";
-
-                using (HttpClient client = new HttpClient())
-                {
-                    var response = await client.GetAsync(url);
-                    response.EnsureSuccessStatusCode();
-
-                    var jsonResponse = await response.Content.ReadAsStringAsync();
-                    var jsonObject = JObject.Parse(jsonResponse);
-
-                    // "translatedText" 값을 안전하게 추출
-                    var translatedText = jsonObject["data"]?["translations"]?[0]?["translatedText"]?.ToString();
-
-                    if (translatedText == null)
-                    {
-                        var errorMessage = $"Google Translate API에서 예상치 못한 응답을 받았습니다. Translating text: {text} from {sourceLanguage} to {targetLanguage} [에러(ERROR)]";
-                        return $"{text} {errorMessage}";
-                    }
-
-                    // 번역된 텍스트를 캐시에 저장
-                    _translationCache[cacheKey] = translatedText;
-
-                    return translatedText;
-                }
-            }
-            catch (HttpRequestException ex)
-            {
-                var errorMessage = $"Google Translate API 호출 중 오류 발생: {ex.Message}. Translating text: {text} from {sourceLanguage} to {targetLanguage} [에러(ERROR)]";
-                return $"{text} {errorMessage}";
-            }
-            catch (JsonReaderException ex)
-            {
-                var errorMessage = $"JSON 파싱 중 오류 발생: {ex.Message}. Translating text: {text} from {sourceLanguage} to {targetLanguage} [에러(ERROR)]";
-                return $"{text} {errorMessage}";
-            }
-            catch (Exception ex)
-            {
-                var errorMessage = $"서버 내부 오류: {ex.Message}. Translating text: {text} from {sourceLanguage} to {targetLanguage} [에러(ERROR)]";
-                return $"{text} {errorMessage}";
-            }
-        }
-
-        private readonly Dictionary<int, string> _targetLanguages = new Dictionary<int, string>
-        {
-            { 1, "en" },
-            { 2, "ko" },
-            { 3, "zh-CN" },
-            { 4, "vi" },
-            { 5, "th" },
-            // 추가 언어 가능
-        };
-
-        // Google Translate API Main
-        public async Task<List<TResult>> TranslateAndFillAsync<TModel, TResult>(TModel model)
-                       where TModel : class
-                       where TResult : class, new()
-        {
-            System.Diagnostics.Debug.WriteLine("Starting translation process for provided model.");
-
-            var localizedModels = new List<TResult>();
-            var baseProperties = typeof(TModel).GetProperties().Where(p => p.PropertyType == typeof(string) && p.Name != "Description" && p.Name != "PageSizeOptions");
-
-            // 기준 언어 감지 (Name 속성을 기준으로 함)
-            var baseText = typeof(TModel).GetProperty("Name").GetValue(model).ToString();
-            var baseLanguage = await DetectLanguageAsync(baseText);
-
-            foreach (var lang in _targetLanguages)
-            {
-                System.Diagnostics.Debug.WriteLine($"Processing translation for target language: {lang.Value}");
-
-                // 중국어 데이터가 이미 존재하는 경우 번역을 건너뜀
-                if (lang.Value == "zh-CN" && model is CategoryModel categoryModel)
-                {
-                    var existingChineseData = categoryModel.Locales.FirstOrDefault(l => l.LanguageId == 3);
-                    if (existingChineseData != null && !string.IsNullOrWhiteSpace(existingChineseData.Name))
-                    {
-                        var chineseDataCopy = new TResult();
-                        foreach (var prop in typeof(TResult).GetProperties())
-                        {
-                            if (prop.CanWrite)
-                            {
-                                prop.SetValue(chineseDataCopy, prop.GetValue(existingChineseData));
-                            }
-                        }
-                        localizedModels.Add(chineseDataCopy);
-                        continue;
-                    }
-                }
-
-                var translatedModel = new TResult();
-
-                // 언어 ID 설정.
-                typeof(TResult).GetProperty("LanguageId")?.SetValue(translatedModel, lang.Key);
-
-                if (baseLanguage != lang.Value)
-                {
-                    foreach (var property in baseProperties)
-                    {
-                        var originalValue = (string)property.GetValue(model);
-
-                        // 값이 없으면 번역하지 않고 진행
-                        if (string.IsNullOrEmpty(originalValue))
-                            continue;
-
-                        string translatedValue;
-
-                        if (baseLanguage == lang.Value || baseLanguage == "en")
-                        {
-                            // 원본 언어와 목표 언어가 동일하거나 원본 언어가 영어인 경우 번역하지 않고 원본 값을 사용
-                            translatedValue = originalValue;
-                        }
-                        else if (lang.Value != "en")
-                        {
-                            // 기준 언어가 영어가 아니면 먼저 영어로 번역
-                            originalValue = await TranslateTextAsync(originalValue, baseLanguage, "en");
-                            // 그 다음 원하는 언어로 번역
-                            translatedValue = await TranslateTextAsync(originalValue, "en", lang.Value);
-                        }
-                        else
-                        {
-                            // 원본 언어를 영어로 번역
-                            translatedValue = await TranslateTextAsync(originalValue, baseLanguage, "en");
-                        }
-
-                        // TResult에 해당 속성이 있는지 확인하고 설정
-                        var resultProperty = typeof(TResult).GetProperty(property.Name);
-                        if (resultProperty != null && resultProperty.PropertyType == typeof(string))
-                        {
-                            resultProperty.SetValue(translatedModel, translatedValue);
-                        }
-                    }
-                }
-                else
-                {
-                    foreach (var property in baseProperties)
-                    {
-                        var originalValue = (string)property.GetValue(model);
-                        typeof(TResult).GetProperty(property.Name)?.SetValue(translatedModel, originalValue);
-                    }
-                }
-
-                localizedModels.Add(translatedModel);
-            }
-
-            _translationCache.Clear();  // 여기에서 캐시를 초기화
-
-            return localizedModels;
-        }
-
         public virtual async Task<IActionResult> ApiCreate(bool continueEditing = false)
         {
             // Call the method to get the product data from Taobao API
-            var productInfoList = await GetProductsFromTaobaoAsync("162205", size: 200);
-            var productInfoList2 = await GetProductsFromTaobaoAsync("50010167", size: 200);
-            var productInfoList3 = await GetProductsFromTaobaoAsync("201356651", size: 200);
+            var productInfoList = await GetProductsFromTaobaoAsync("121402026", size: 1);
+            //var productInfoList2 = await GetProductsFromTaobaoAsync("50010167", size: 200);
+            //var productInfoList3 = await GetProductsFromTaobaoAsync("201356651", size: 200);
             //var productInfoList4 = await GetProductsFromTaobaoAsync("201356651", size: 200);
 
-            productInfoList.AddRange(productInfoList2);
-            productInfoList.AddRange(productInfoList3);
+            //productInfoList.AddRange(productInfoList2);
+            //productInfoList.AddRange(productInfoList3);
             //productInfoList.AddRange(productInfoList4);
 
             foreach (var productInfo in productInfoList)
@@ -1391,7 +1368,8 @@ namespace Nop.Web.Areas.Admin.Controllers
                 var productId = productInfo.Id;
                 var productUrl = productInfo.Url;
                 var productTitle = productInfo.Title;
-                var translatedValue = await TranslateTextAsync(productTitle, "en", "ko");
+                //var translatedValue = await TranslateTextAsync(productTitle, "en", "ko");
+                var translatedValue = await DeppLTranslateTextAsync(productTitle, "auto", "ko", true);
 
                 var productData = await GetProductFromTaobaoAsync(productId);
 
@@ -1497,7 +1475,7 @@ namespace Nop.Web.Areas.Admin.Controllers
                     await _urlRecordService.SaveSlugAsync(product, model.SeName, 0);
 
                     //locales
-                    await UpdateLocalesAsync(product, model);
+                    await UpdateLocalesAsync(product, model, true);
 
                     //categories
                     await SaveCategoryMappingsAsync(product, model);
@@ -1646,7 +1624,7 @@ namespace Nop.Web.Areas.Admin.Controllers
                     await _urlRecordService.SaveSlugAsync(product, model.SeName, 0);
 
                     //locales
-                    await UpdateLocalesAsync(product, model);
+                    await UpdateLocalesAsync(product, model , true);
 
                     //categories
                     await SaveCategoryMappingsAsync(product, model);
@@ -1690,6 +1668,85 @@ namespace Nop.Web.Areas.Admin.Controllers
             }
 
             return RedirectToAction("List");
+        }
+
+        #endregion
+
+        #region Product list / create / edit / delete
+
+        public virtual IActionResult Index()
+        {
+            return RedirectToAction("List");
+        }
+
+        public virtual async Task<IActionResult> List()
+        {
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageProducts))
+                return AccessDeniedView();
+
+            //prepare model
+            var model = await _productModelFactory.PrepareProductSearchModelAsync(new ProductSearchModel());
+
+            return View(model);
+        }
+
+        [HttpPost]
+        public virtual async Task<IActionResult> ProductList(ProductSearchModel searchModel)
+        {
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageProducts))
+                return await AccessDeniedDataTablesJson();
+
+            //prepare model
+            var model = await _productModelFactory.PrepareProductListModelAsync(searchModel);
+
+            return Json(model);
+        }
+
+        [HttpPost, ActionName("List")]
+        [FormValueRequired("go-to-product-by-sku")]
+        public virtual async Task<IActionResult> GoToSku(ProductSearchModel searchModel)
+        {
+            //try to load a product entity, if not found, then try to load a product attribute combination
+            var productId = (await _productService.GetProductBySkuAsync(searchModel.GoDirectlyToSku))?.Id
+                ?? (await _productAttributeService.GetProductAttributeCombinationBySkuAsync(searchModel.GoDirectlyToSku))?.ProductId;
+
+            if (productId != null)
+                return RedirectToAction("Edit", "Product", new { id = productId });
+
+            //not found
+            return await List();
+        }
+
+        public virtual async Task<IActionResult> Create(bool showtour = false)
+        {
+            if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageProducts))
+                return AccessDeniedView();
+
+            //validate maximum number of products per vendor
+            var currentVendor = await _workContext.GetCurrentVendorAsync();
+            if (_vendorSettings.MaximumProductNumber > 0 && currentVendor != null
+                && await _productService.GetNumberOfProductsByVendorIdAsync(currentVendor.Id) >= _vendorSettings.MaximumProductNumber)
+            {
+                _notificationService.ErrorNotification(string.Format(await _localizationService.GetResourceAsync("Admin.Catalog.Products.ExceededMaximumNumber"),
+                    _vendorSettings.MaximumProductNumber));
+                return RedirectToAction("List");
+            }
+
+            //prepare model
+            var model = await _productModelFactory.PrepareProductModelAsync(new ProductModel(), null);
+
+            //show configuration tour
+            if (showtour)
+            {
+                var customer = await _workContext.GetCurrentCustomerAsync();
+                var hideCard = await _genericAttributeService.GetAttributeAsync<bool>(customer, NopCustomerDefaults.HideConfigurationStepsAttribute);
+                var closeCard = await _genericAttributeService.GetAttributeAsync<bool>(customer, NopCustomerDefaults.CloseConfigurationStepsAttribute);
+
+                if (!hideCard && !closeCard)
+                    ViewBag.ShowTour = true;
+            }
+
+            return View(model);
         }
 
         [HttpPost, ParameterBasedOnFormName("save-continue", "continueEditing")]
