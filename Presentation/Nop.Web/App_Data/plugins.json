@@ -28,20 +28,12 @@
       "Version": "1.10"
     },
     {
-      "SystemName": "MultiFactorAuth.GoogleAuthenticator",
-      "Version": "1.14"
-    },
-    {
       "SystemName": "Payments.CheckMoneyOrder",
       "Version": "1.51"
     },
     {
       "SystemName": "Payments.CyberSource",
       "Version": "1.10"
-    },
-    {
-      "SystemName": "Payments.Manual",
-      "Version": "1.60"
     },
     {
       "SystemName": "Pickup.PickupInStore",
@@ -52,20 +44,8 @@
       "Version": "2.36"
     },
     {
-      "SystemName": "Shipping.UPS",
-      "Version": "1.71"
-    },
-    {
-      "SystemName": "Tax.Avalara",
-      "Version": "2.68.1"
-    },
-    {
       "SystemName": "Tax.FixedOrByCountryStateZip",
       "Version": "1.44"
-    },
-    {
-      "SystemName": "Widgets.FacebookPixel",
-      "Version": "2.02"
     },
     {
       "SystemName": "Widgets.GoogleAnalytics",
@@ -78,13 +58,16 @@
     {
       "SystemName": "Widgets.What3words",
       "Version": "1.03"
-    },
-    {
-      "SystemName": "ExternalAuth.Facebook",
-      "Version": "1.80"
     }
   ],
   "PluginNamesToUninstall": [],
-  "PluginNamesToDelete": [],
+  "PluginNamesToDelete": [
+    "ExternalAuth.Facebook",
+    "MultiFactorAuth.GoogleAuthenticator",
+    "Payments.Manual",
+    "Shipping.UPS",
+    "Tax.Avalara",
+    "Widgets.FacebookPixel"
+  ],
   "PluginNamesToInstall": []
 }

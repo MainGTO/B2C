@@ -2819,7 +2819,7 @@ label, label + * {
 .tooltip-container {
   position: absolute;
   width: 200px;
-  color: #000000;
+  color: #FF0000;
   background: #FFFFFF;
   border: 1px solid #eeeeee;
   text-align: center;
@@ -6498,8 +6498,7 @@ label, label + * {
   background-color: #fff;
   padding: 10px;
   font-family: "Courier New", Courier, monospace;
-  color: #000;
-
+  color: #FF0000;
   white-space: pre-wrap;
   word-wrap: break-word;
 }
