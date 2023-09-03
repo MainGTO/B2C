@@ -51,6 +51,11 @@ using HtmlAgilityPack;
 using static Nop.Web.Areas.Admin.Controllers.ProductController;
 using System.Net.Http.Headers;
 using DeepL;
+using DeepL.Model;
+using DocumentFormat.OpenXml.Wordprocessing;
+using DocumentFormat.OpenXml.Spreadsheet;
+using System.Diagnostics;
+using FluentMigrator.Runner;
 
 namespace Nop.Web.Areas.Admin.Controllers
 {
@@ -187,9 +192,29 @@ namespace Nop.Web.Areas.Admin.Controllers
             var requiredLanguages = new List<int> { 1, 2, 3 }; // 1: 영어, 2: 한국어, 3: 중국어 
 
             // model.Locales에 필요한 번역이 모두 있는지 확인
-            var existingLanguages = model.Locales.Select(l => l.LanguageId).ToList();
-            if (requiredLanguages.All(r => existingLanguages.Contains(r)))
-                return; // 모든 번역이 있다면 메서드 종료
+            var existingLanguagesWithName = model.Locales.Where(l => !string.IsNullOrEmpty(l.Name)).Select(l => l.LanguageId).ToList();
+            var existingLanguagesWithShortDescription = model.Locales.Where(l => !string.IsNullOrEmpty(l.ShortDescription)).Select(l => l.LanguageId).ToList();
+
+            // && requiredLanguages.All(r => existingLanguagesWithShortDescription.Contains(r)
+            // 이런식으로 번역할 필드 추가가 가능함
+
+            if (requiredLanguages.All(r => existingLanguagesWithName.Contains(r)))
+            {
+                var isUnchanged = true;
+                foreach (var locale in model.Locales)
+                {
+                    var currentLocalizedValue = await _localizedEntityService.GetLocalizedValueAsync(locale.LanguageId, product.Id, "Product", "Name");
+                    if (currentLocalizedValue != locale.Name)
+                    {
+                        isUnchanged = false;
+                        api = true;
+                        break;
+                    }
+                }
+
+                if (isUnchanged)
+                    return; // 모든 번역이 있고 변경되지 않았다면 메서드 종료
+            }
 
             // api가 true라면 번역만 건너뛰고 나머지 작업을 수행
             if (!api)
@@ -201,6 +226,7 @@ namespace Nop.Web.Areas.Admin.Controllers
                     { "zh", 3 }
                 };
 
+                // 기본 번역값으로 모든 언어에 대해 model.Name을 설정
                 var translations = new Dictionary<string, string>
                 {
                     { "en-US", model.Name },
@@ -208,10 +234,8 @@ namespace Nop.Web.Areas.Admin.Controllers
                     { "zh", model.Name }
                 };
 
-                // 기준 언어는 한국어이므로 "ko" 제외
-                allLanguages.Remove("ko");
-
-                foreach (var locale in model.Locales)
+                // model.Locales에서 Name이 설정되어 있는 항목에 대한 언어 코드를 allLanguages에서 제거
+                foreach (var locale in model.Locales.Where(l => !string.IsNullOrEmpty(l.Name)))
                 {
                     var langCode = ConvertToLanguageCode(locale.LanguageId.ToString());
                     if (allLanguages.ContainsKey(langCode))
@@ -220,11 +244,13 @@ namespace Nop.Web.Areas.Admin.Controllers
                     }
                 }
 
-                foreach (var langCode in allLanguages.Keys)
+                // allLanguages에 남아있는 언어 코드에 대해 번역 수행 (단, 'ko'는 제외)
+                foreach (var langCode in allLanguages.Keys.Except(new[] { "ko" }))
                 {
                     translations[langCode] = await DeppLTranslateTextAsync(model.Name, "ko", langCode);
                 }
 
+                // 번역된 결과를 model.Locales에 추가
                 foreach (var entry in translations)
                 {
                     model.Locales.Add(new ProductLocalizedModel
@@ -283,8 +309,80 @@ namespace Nop.Web.Areas.Admin.Controllers
             }
         }
 
-        protected virtual async Task UpdateLocalesAsync(ProductTag productTag, ProductTagModel model)
+        protected virtual async Task UpdateLocalesAsync(ProductTag productTag, ProductTagModel model , bool api = false)
         {
+            // 번역이 필요한 언어 ID 목록을 확인
+            var requiredLanguages = new List<int> { 1, 2, 3 }; // 1: 영어, 2: 한국어, 3: 중국어 
+
+            // model.Locales에 필요한 번역이 모두 있는지 확인
+            var existingLanguagesWithName = model.Locales.Where(l => !string.IsNullOrEmpty(l.Name)).Select(l => l.LanguageId).ToList();
+
+            // && requiredLanguages.All(r => existingLanguagesWithShortDescription.Contains(r)
+            // 이런식으로 번역할 필드 추가가 가능함
+
+            if (requiredLanguages.All(r => existingLanguagesWithName.Contains(r)))
+            {
+                var isUnchanged = true;
+                foreach (var locale in model.Locales)
+                {
+                    var currentLocalizedValue = await _localizedEntityService.GetLocalizedValueAsync(locale.LanguageId, productTag.Id, "ProductTag", "Name");
+                    if (currentLocalizedValue != locale.Name)
+                    {
+                        isUnchanged = false;
+                        api = true;
+                        break;
+                    }
+                }
+
+                if (isUnchanged)
+                    return; // 모든 번역이 있고 변경되지 않았다면 메서드 종료
+            }
+
+            // api가 true라면 번역만 건너뛰고 나머지 작업을 수행
+            if (!api)
+            {
+                var allLanguages = new Dictionary<string, int>
+                {
+                    { "en-US", 1 },
+                    { "ko", 2 },
+                    { "zh", 3 }
+                };
+
+                // 기본 번역값으로 모든 언어에 대해 model.Name을 설정
+                var translations = new Dictionary<string, string>
+                {
+                    { "en-US", model.Name },
+                    { "ko", model.Name },
+                    { "zh", model.Name }
+                };
+
+                // model.Locales에서 Name이 설정되어 있는 항목에 대한 언어 코드를 allLanguages에서 제거
+                foreach (var locale in model.Locales.Where(l => !string.IsNullOrEmpty(l.Name)))
+                {
+                    var langCode = ConvertToLanguageCode(locale.LanguageId.ToString());
+                    if (allLanguages.ContainsKey(langCode))
+                    {
+                        allLanguages.Remove(langCode);
+                    }
+                }
+
+                // allLanguages에 남아있는 언어 코드에 대해 번역 수행 (단, 'ko'는 제외)
+                foreach (var langCode in allLanguages.Keys.Except(new[] { "ko" }))
+                {
+                    translations[langCode] = await DeppLTranslateTextAsync(model.Name, "ko", langCode);
+                }
+
+                // 번역된 결과를 model.Locales에 추가
+                foreach (var entry in translations)
+                {
+                    model.Locales.Add(new ProductTagLocalizedModel
+                    {
+                        LanguageId = allLanguages[entry.Key],
+                        Name = entry.Value ?? $"ProductTagLocalizedModel Name 값을 불러오지 못했습니다. (Language: {entry.Key})"
+                    });
+                }
+            }
+
             foreach (var localized in model.Locales)
             {
                 await _localizedEntityService.SaveLocalizedValueAsync(productTag,
@@ -297,8 +395,101 @@ namespace Nop.Web.Areas.Admin.Controllers
             }
         }
 
-        protected virtual async Task UpdateLocalesAsync(ProductAttributeMapping pam, ProductAttributeMappingModel model)
+        protected virtual async Task UpdateLocalesAsync(ProductAttributeMapping pam, ProductAttributeMappingModel model , bool api = false)
         {
+            // 번역이 필요한 언어 ID 목록을 확인
+            var requiredLanguages = new List<int> { 1, 2, 3 }; // 1: 영어, 2: 한국어, 3: 중국어 
+
+            // model.Locales에 필요한 번역이 모두 있는지 확인
+            var existingLanguagesWithName = model.Locales.Where(l => !string.IsNullOrEmpty(l.TextPrompt)).Select(l => l.LanguageId).ToList();
+            var existingLanguagesWithDefaultValue = model.Locales.Where(l => !string.IsNullOrEmpty(l.DefaultValue)).Select(l => l.LanguageId).ToList();
+
+            // 이런식으로 번역할 필드 추가가 가능함
+
+            if (requiredLanguages.All(r => existingLanguagesWithName.Contains(r)) && requiredLanguages.All(r => existingLanguagesWithDefaultValue.Contains(r)))
+            {
+                var isUnchanged = true;
+                foreach (var locale in model.Locales)
+                {
+                    var currentLocalizedValueTextPrompt = await _localizedEntityService.GetLocalizedValueAsync(locale.LanguageId, pam.Id, "ProductAttributeMapping", "TextPrompt");
+                    var currentLocalizedValueDefaultValue = await _localizedEntityService.GetLocalizedValueAsync(locale.LanguageId, pam.Id, "ProductAttributeMapping", "DefaultValue");
+
+                    if (currentLocalizedValueTextPrompt != locale.TextPrompt || currentLocalizedValueDefaultValue != locale.DefaultValue)
+                    {
+                        isUnchanged = false;
+                        api = true;
+                        break;
+                    }
+                }
+
+                if (isUnchanged)
+                    return; // 모든 번역이 있고 변경되지 않았다면 메서드 종료
+            }
+
+            // api가 true라면 번역만 건너뛰고 나머지 작업을 수행
+            if (!api)
+            {
+                var allLanguages = new Dictionary<string, int>
+                {
+                    { "en-US", 1 },
+                    { "ko", 2 },
+                    { "zh", 3 }
+                };
+
+                // 기본 번역값으로 모든 언어에 대해 model.Name을 설정
+                var translations = new Dictionary<string, string>
+                {
+                    { "en-US", model.TextPrompt },
+                    { "ko", model.TextPrompt },
+                    { "zh", model.TextPrompt }
+                };
+
+                var defaultTranslations = new Dictionary<string, string>
+                {
+                    { "en-US", model.DefaultValue },
+                    { "ko", model.DefaultValue },
+                    { "zh", model.DefaultValue }
+                };
+
+                // model.Locales에서 Name이 설정되어 있는 항목에 대한 언어 코드를 allLanguages에서 제거
+                foreach (var locale in model.Locales.Where(l => !string.IsNullOrEmpty(l.TextPrompt)))
+                {
+                    var langCode = ConvertToLanguageCode(locale.LanguageId.ToString());
+                    if (allLanguages.ContainsKey(langCode))
+                    {
+                        allLanguages.Remove(langCode);
+                    }
+                }
+
+                // allLanguages에 남아있는 언어 코드에 대해 번역 수행 (단, 'ko'는 제외)
+                foreach (var langCode in allLanguages.Keys.Except(new[] { "ko" }))
+                {
+                    translations[langCode] = await DeppLTranslateTextAsync(model.TextPrompt, "ko", langCode);
+                }
+
+                foreach (var langCode in allLanguages.Keys.Except(new[] { "ko" }))
+                {
+                    defaultTranslations[langCode] = await DeppLTranslateTextAsync(model.DefaultValue, "ko", langCode);
+                }
+                // 번역된 결과를 model.Locales에 추가
+                foreach (var entry in translations)
+                {
+                    model.Locales.Add(new ProductAttributeMappingLocalizedModel
+                    {
+                        LanguageId = allLanguages[entry.Key],
+                        TextPrompt = entry.Value ?? $"ProductAttributeMappingLocalizedModel Name 값을 불러오지 못했습니다. (Language: {entry.Key})"
+                    });
+                }
+                foreach (var entry in defaultTranslations)
+                {
+                    model.Locales.Add(new ProductAttributeMappingLocalizedModel
+                    {
+                        LanguageId = allLanguages[entry.Key],
+                        DefaultValue = entry.Value ?? $"ProductAttributeMappingLocalizedModel DefaultValue 값을 불러오지 못했습니다. (Language: {entry.Key})"
+                    });
+                }
+            }
+
             foreach (var localized in model.Locales)
             {
                 await _localizedEntityService.SaveLocalizedValueAsync(pam,
@@ -312,8 +503,80 @@ namespace Nop.Web.Areas.Admin.Controllers
             }
         }
 
-        protected virtual async Task UpdateLocalesAsync(ProductAttributeValue pav, ProductAttributeValueModel model)
+        protected virtual async Task UpdateLocalesAsync(ProductAttributeValue pav, ProductAttributeValueModel model , bool api = false)
         {
+            // 번역이 필요한 언어 ID 목록을 확인
+            var requiredLanguages = new List<int> { 1, 2, 3 }; // 1: 영어, 2: 한국어, 3: 중국어 
+
+            // model.Locales에 필요한 번역이 모두 있는지 확인
+            var existingLanguagesWithName = model.Locales.Where(l => !string.IsNullOrEmpty(l.Name)).Select(l => l.LanguageId).ToList();
+
+            // && requiredLanguages.All(r => existingLanguagesWithShortDescription.Contains(r)
+            // 이런식으로 번역할 필드 추가가 가능함
+
+            if (requiredLanguages.All(r => existingLanguagesWithName.Contains(r)))
+            {
+                var isUnchanged = true;
+                foreach (var locale in model.Locales)
+                {
+                    var currentLocalizedValue = await _localizedEntityService.GetLocalizedValueAsync(locale.LanguageId, pav.Id, "ProductAttributeValue", "Name");
+                    if (currentLocalizedValue != locale.Name)
+                    {
+                        isUnchanged = false;
+                        api = true;
+                        break;
+                    }
+                }
+
+                if (isUnchanged)
+                    return; // 모든 번역이 있고 변경되지 않았다면 메서드 종료
+            }
+
+            // api가 true라면 번역만 건너뛰고 나머지 작업을 수행
+            if (!api)
+            {
+                var allLanguages = new Dictionary<string, int>
+                {
+                    { "en-US", 1 },
+                    { "ko", 2 },
+                    { "zh", 3 }
+                };
+
+                // 기본 번역값으로 모든 언어에 대해 model.Name을 설정
+                var translations = new Dictionary<string, string>
+                {
+                    { "en-US", model.Name },
+                    { "ko", model.Name },
+                    { "zh", model.Name }
+                };
+
+                // model.Locales에서 Name이 설정되어 있는 항목에 대한 언어 코드를 allLanguages에서 제거
+                foreach (var locale in model.Locales.Where(l => !string.IsNullOrEmpty(l.Name)))
+                {
+                    var langCode = ConvertToLanguageCode(locale.LanguageId.ToString());
+                    if (allLanguages.ContainsKey(langCode))
+                    {
+                        allLanguages.Remove(langCode);
+                    }
+                }
+
+                // allLanguages에 남아있는 언어 코드에 대해 번역 수행 (단, 'ko'는 제외)
+                foreach (var langCode in allLanguages.Keys.Except(new[] { "ko" }))
+                {
+                    translations[langCode] = await DeppLTranslateTextAsync(model.Name, "ko", langCode);
+                }
+
+                // 번역된 결과를 model.Locales에 추가
+                foreach (var entry in translations)
+                {
+                    model.Locales.Add(new ProductAttributeValueLocalizedModel
+                    {
+                        LanguageId = allLanguages[entry.Key],
+                        Name = entry.Value ?? $"ProductTagLocalizedModel Name 값을 불러오지 못했습니다. (Language: {entry.Key})"
+                    });
+                }
+            }
+
             foreach (var localized in model.Locales)
             {
                 await _localizedEntityService.SaveLocalizedValueAsync(pav,
@@ -1092,7 +1355,7 @@ namespace Nop.Web.Areas.Admin.Controllers
         public async Task<List<ProductInfo>> GetProductsFromTaobaoAsync(
             string categoryId,
             int page = 1,
-            int size = 500,
+            int size = 200,
             string sort = "updated_time_desc,vendor_rating_desc",
             int minSellerRating = 3,
             int maxSellerRating = 5,
@@ -1105,6 +1368,8 @@ namespace Nop.Web.Areas.Admin.Controllers
             request.AddHeader("X-RapidAPI-Host", "taobao-tmall-Tao-Bao-data-service.p.rapidapi.com");
 
             var response = await client.ExecuteAsync(request);
+
+            System.Diagnostics.Debug.WriteLine($"GetProductsFromTaobaoAsync response text: '{response.Content}'");
 
             if (response.StatusCode != HttpStatusCode.OK)
             {
@@ -1147,7 +1412,11 @@ namespace Nop.Web.Areas.Admin.Controllers
             request.AddHeader("X-RapidAPI-Host", "taobao-tmall-Tao-Bao-data-service.p.rapidapi.com");
             var response = await client.ExecuteAsync(request);
 
+            System.Diagnostics.Debug.WriteLine($"GetProductFromTaobaoAsyncresponse text: '{response.Content}'");
+
             var data = JObject.Parse(response.Content);
+
+            System.Diagnostics.Debug.WriteLine($"GetProductFromTaobaoAsyncresponse text: '{data}'");
 
             var productInfo = new TaobaoProductInfo
             {
@@ -1173,22 +1442,125 @@ namespace Nop.Web.Areas.Admin.Controllers
             return productInfo;
         }
 
+        public class CategorizedCategory
+        {
+            public Nop.Core.Domain.Catalog.Category Parent { get; set; }
+            public string ParentName { get; set; }
+            public List<CategoryWithTranslation> Children { get; set; } = new List<CategoryWithTranslation>();
+        }
+
+        public class CategoryWithTranslation
+        {
+            public Nop.Core.Domain.Catalog.Category CategoryData { get; set; }
+            public string TranslatedName { get; set; }
+        }
+
+        async Task<List<ProductInfo>> SafeGetProductsFromTaobaoAsync(string id, int size, int? page = null)
+        {
+            try
+            {
+                if (page.HasValue)
+                {
+                    return await GetProductsFromTaobaoAsync(id, size, page.Value);
+                }
+                else
+                {
+                    return await GetProductsFromTaobaoAsync(id, size);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error fetching products for ID {id}, size {size}, page {page}: {ex.Message}");
+                return new List<ProductInfo>(); // 또는 null을 반환하거나 다른 적절한 처리를 할 수 있습니다.
+            }
+        }
+
         public virtual async Task<IActionResult> ApiCreate(bool continueEditing = false)
         {
-            // Call the method to get the product data from Taobao API
-            var productInfoList = await GetProductsFromTaobaoAsync("121454013", size: 1);
-            //var productInfoList2 = await GetProductsFromTaobaoAsync("50010167", size: 200);
-            //var productInfoList3 = await GetProductsFromTaobaoAsync("201356651", size: 200);
-            //var productInfoList4 = await GetProductsFromTaobaoAsync("201356651", size: 200);
+            var swCategories = Stopwatch.StartNew();
+            swCategories.Start();
+            var languageId = 3; // 중국어에 대한 ID
 
-            //productInfoList.AddRange(productInfoList2);
-            //productInfoList.AddRange(productInfoList3);
-            //productInfoList.AddRange(productInfoList4);
+            // 2차 및 3차 카테고리 조회
+            var categories = await _categoryService.GetAllCategoriesAsync();
+
+            var categorizedCategories = new List<CategorizedCategory>();
+
+            foreach (var category in categories)
+            {
+                var parentCategory = await _categoryService.GetCategoryByIdAsync(category.ParentCategoryId);
+
+                // 부모 카테고리가 null이 아닌지 확인
+                if (parentCategory == null)
+                {
+                    continue;  // 부모 카테고리가 null이면 다음 반복으로 넘어감
+                }
+
+                var parentTranslatedName = await _localizedEntityService.GetLocalizedValueAsync(languageId, parentCategory.Id, "Category", "Name");
+                var childTranslatedName = await _localizedEntityService.GetLocalizedValueAsync(languageId, category.Id, "Category", "Name");
+
+                // 딕셔너리에 저장
+                var categorizedCategory = categorizedCategories.FirstOrDefault(cc => cc.Parent.Id == parentCategory.Id);
+                if (categorizedCategory == null)
+                {
+                    categorizedCategory = new CategorizedCategory
+                    {
+                        Parent = parentCategory,
+                        ParentName = parentTranslatedName
+                    };
+                    categorizedCategories.Add(categorizedCategory);
+                }
+                categorizedCategory.Children.Add(new CategoryWithTranslation
+                {
+                    CategoryData = category,
+                    TranslatedName = childTranslatedName
+                });
+            }
+            swCategories.Stop();
+            var ts = swCategories.Elapsed;
+            var elapsedTime = $"{ts.Hours:00}:{ts.Minutes:00}:{ts.Seconds:00}.{ts.Milliseconds:000}";
+            System.Diagnostics.Debug.WriteLine($"swCategories : '{elapsedTime}'");
+
+
+            // Call the method to get the product data from Taobao API
+            var productInfoList = await GetProductsFromTaobaoAsync("121454013", size: 200, page: 2);
+            var productInfoList2 = await GetProductsFromTaobaoAsync("50010167", size: 200);
+            var productInfoList3 = await GetProductsFromTaobaoAsync("201356651", size: 200);
+            var productInfoList4 = await GetProductsFromTaobaoAsync("11", size: 200);
+            var productInfoList5 = await GetProductsFromTaobaoAsync("50010167", size: 200, page: 2);
+            var productInfoList6 = await GetProductsFromTaobaoAsync("201356651", size: 200, page: 2);
+            var productInfoList7 = await GetProductsFromTaobaoAsync("11", size: 200, page: 2);
+            var productInfoList8 = await GetProductsFromTaobaoAsync("121454013", size: 200, page: 3);
+
+            /*            var productInfoList = await SafeGetProductsFromTaobaoAsync("121454013", 200, 2);
+                        var productInfoList2 = await SafeGetProductsFromTaobaoAsync("50010167", 200);
+                        var productInfoList3 = await SafeGetProductsFromTaobaoAsync("201356651", 200);
+                        var productInfoList4 = await SafeGetProductsFromTaobaoAsync("11", 200);
+                        var productInfoList5 = await SafeGetProductsFromTaobaoAsync("50010167", 200, 2);
+                        var productInfoList6 = await SafeGetProductsFromTaobaoAsync("201356651", 200, 2);
+                        var productInfoList7 = await SafeGetProductsFromTaobaoAsync("11", 200, 2);
+                        var productInfoList8 = await SafeGetProductsFromTaobaoAsync("121454013", 200, 3);*/
+
+            productInfoList.AddRange(productInfoList2);
+            productInfoList.AddRange(productInfoList3);
+            productInfoList.AddRange(productInfoList4);
+            productInfoList.AddRange(productInfoList5);
+            productInfoList.AddRange(productInfoList6);
+            productInfoList.AddRange(productInfoList7);
+            productInfoList.AddRange(productInfoList8);
 
             foreach (var productInfo in productInfoList)
             {
                 var productId = productInfo.Id;
                 var productUrl = productInfo.Url;
+
+                var productBySku = await _productService.GetProductBySkuAsync(productUrl);
+                if (productBySku != null)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Skip the product : '{productUrl}'");
+                    continue;
+                }
+
                 // En
                 var productTitle = productInfo.Title;
                 // Zh
@@ -1277,18 +1649,19 @@ namespace Nop.Web.Areas.Admin.Controllers
                     var product = model.ToEntity<Product>();
                     product.CreatedOnUtc = DateTime.UtcNow;
                     product.UpdatedOnUtc = DateTime.UtcNow;
+                    await _productService.InsertProductAsync(product);
 
-                    var productBySku = await _productService.GetProductBySkuAsync(product.Sku);
+                    /*var productBySku = await _productService.GetProductBySkuAsync(product.Sku);
                     if (productBySku != null)
                     {
-                        var editModel = model;
-                        await ApiEdit(editModel);
+                        model.Id = productBySku.Id;
+                        await ApiEdit(model);
                         continue;
                     }
                     else
                     {
                         await _productService.InsertProductAsync(product);
-                    }
+                    }*/
 
                     // productData에서 이미지 URL 목록을 가져옵니다.
                     var imageUrlList = productData.ItemImgs.Select(i => i.Url).ToList();
@@ -1783,13 +2156,24 @@ namespace Nop.Web.Areas.Admin.Controllers
                 // 1. 언어 감지
                 var detectedLanguage = await DetectLanguageAsync(model.Name);  // 여기서 실제 언어 감지 함수를 호출
                 detectedLanguage = NormalizeLanguageCode(detectedLanguage);
+
                 // 2. 감지된 언어가 중국어 또는 영어인 경우
                 if (detectedLanguage == "zh" || detectedLanguage == "en")
                 {
+                    // 원래 Name 값을 Locales에 저장하기 전에 일치하는 LanguageId가 있는 항목이 있는지 확인
+                    int targetLanguageId = ConvertDetectedLanguageToLanguageId(detectedLanguage);
+                    var existingItem = model.Locales.FirstOrDefault(p => p.LanguageId == targetLanguageId);
+
+                    // 일치하는 LanguageId가 있는 항목이 있다면 제거
+                    if (existingItem != null)
+                    {
+                        model.Locales.Remove(existingItem);
+                    }
+
                     // 원래 Name 값을 Locales에 저장
                     model.Locales.Add(new ProductLocalizedModel
                     {
-                        LanguageId = ConvertDetectedLanguageToLanguageId(detectedLanguage),
+                        LanguageId = targetLanguageId,
                         Name = model.Name
                     });
 
@@ -1969,6 +2353,35 @@ namespace Nop.Web.Areas.Admin.Controllers
                 //search engine name
                 model.SeName = await _urlRecordService.ValidateSeNameAsync(product, model.SeName, product.Name, true);
                 await _urlRecordService.SaveSlugAsync(product, model.SeName, 0);
+
+                // 1. 언어 감지
+                var detectedLanguage = await DetectLanguageAsync(model.Name);  // 여기서 실제 언어 감지 함수를 호출
+                detectedLanguage = NormalizeLanguageCode(detectedLanguage);
+
+                // 2. 감지된 언어가 중국어 또는 영어인 경우
+                if (detectedLanguage == "zh" || detectedLanguage == "en")
+                {
+                    // 원래 Name 값을 Locales에 저장하기 전에 일치하는 LanguageId가 있는 항목이 있는지 확인
+                    int targetLanguageId = ConvertDetectedLanguageToLanguageId(detectedLanguage);
+                    var existingItem = model.Locales.FirstOrDefault(p => p.LanguageId == targetLanguageId);
+
+                    // 일치하는 LanguageId가 있는 항목이 있다면 제거
+                    if (existingItem != null)
+                    {
+                        model.Locales.Remove(existingItem);
+                    }
+
+                    // 원래 Name 값을 Locales에 저장
+                    model.Locales.Add(new ProductLocalizedModel
+                    {
+                        LanguageId = targetLanguageId,
+                        Name = model.Name
+                    });
+
+                    // Name을 한국어로 번역
+                    var translatedName = await DeppLTranslateTextAsync(model.Name, detectedLanguage, "ko");
+                    model.Name = translatedName;
+                }
 
                 //locales
                 await UpdateLocalesAsync(product, model);

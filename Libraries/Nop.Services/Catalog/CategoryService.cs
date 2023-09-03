@@ -207,7 +207,7 @@ namespace Nop.Services.Catalog
         /// A task that represents the asynchronous operation
         /// The task result contains the categories
         /// </returns>
-        public virtual async Task<IList<Category>> GetAllCategoriesAsync(int storeId = 0, bool showHidden = false)
+        public virtual async Task<IList<Category>> GetAllCategoriesAsync(int storeId = 0, bool showHidden = true)
         {
             var key = _staticCacheManager.PrepareKeyForDefaultCache(NopCatalogDefaults.CategoriesAllCacheKey,
                 storeId,
@@ -238,7 +238,7 @@ namespace Nop.Services.Catalog
         /// The task result contains the categories
         /// </returns>
         public virtual async Task<IPagedList<Category>> GetAllCategoriesAsync(string categoryName, int storeId = 0,
-            int pageIndex = 0, int pageSize = int.MaxValue, bool showHidden = false, bool? overridePublished = null)
+            int pageIndex = 0, int pageSize = int.MaxValue, bool showHidden = true, bool? overridePublished = null)
         {
             var unsortedCategories = await _categoryRepository.GetAllAsync(async query =>
             {
@@ -282,7 +282,7 @@ namespace Nop.Services.Catalog
         /// The task result contains the categories
         /// </returns>
         public virtual async Task<IList<Category>> GetAllCategoriesByParentCategoryIdAsync(int parentCategoryId,
-            bool showHidden = false)
+            bool showHidden = true)
         {
             var store = await _storeContext.GetCurrentStoreAsync();
             var customer = await _workContext.GetCurrentCustomerAsync();
@@ -318,7 +318,7 @@ namespace Nop.Services.Catalog
         /// A task that represents the asynchronous operation
         /// The task result contains the categories
         /// </returns>
-        public virtual async Task<IList<Category>> GetAllCategoriesDisplayedOnHomepageAsync(bool showHidden = false)
+        public virtual async Task<IList<Category>> GetAllCategoriesDisplayedOnHomepageAsync(bool showHidden = true)
         {
             var categories = await _categoryRepository.GetAllAsync(query =>
             {
@@ -396,7 +396,7 @@ namespace Nop.Services.Catalog
         /// A task that represents the asynchronous operation
         /// The task result contains the category identifiers
         /// </returns>
-        public virtual async Task<IList<int>> GetChildCategoryIdsAsync(int parentCategoryId, int storeId = 0, bool showHidden = false)
+        public virtual async Task<IList<int>> GetChildCategoryIdsAsync(int parentCategoryId, int storeId = 0, bool showHidden = true)
         {
             var cacheKey = _staticCacheManager.PrepareKeyForDefaultCache(NopCatalogDefaults.CategoriesChildIdsCacheKey,
                 parentCategoryId,
@@ -446,7 +446,7 @@ namespace Nop.Services.Catalog
         /// The task result contains the list of categories
         /// </returns>
         public virtual async Task<IPagedList<Category>> GetCategoriesByAppliedDiscountAsync(int? discountId = null,
-            bool showHidden = false, int pageIndex = 0, int pageSize = int.MaxValue)
+            bool showHidden = true, int pageIndex = 0, int pageSize = int.MaxValue)
         {
             var categories = _categoryRepository.Table;
 
@@ -557,7 +557,7 @@ namespace Nop.Services.Catalog
         /// The task result contains the product a category mapping collection
         /// </returns>
         public virtual async Task<IPagedList<ProductCategory>> GetProductCategoriesByCategoryIdAsync(int categoryId,
-            int pageIndex = 0, int pageSize = int.MaxValue, bool showHidden = false)
+            int pageIndex = 0, int pageSize = int.MaxValue, bool showHidden = true)
         {
             if (categoryId == 0)
                 return new PagedList<ProductCategory>(new List<ProductCategory>(), pageIndex, pageSize);
@@ -595,7 +595,7 @@ namespace Nop.Services.Catalog
         /// A task that represents the asynchronous operation
         /// The task result contains the product category mapping collection
         /// </returns>
-        public virtual async Task<IList<ProductCategory>> GetProductCategoriesByProductIdAsync(int productId, bool showHidden = false)
+        public virtual async Task<IList<ProductCategory>> GetProductCategoriesByProductIdAsync(int productId, bool showHidden = true)
         {
             var store = await _storeContext.GetCurrentStoreAsync();
 
@@ -754,7 +754,7 @@ namespace Nop.Services.Catalog
         /// A task that represents the asynchronous operation
         /// The task result contains the category breadcrumb 
         /// </returns>
-        public virtual async Task<IList<Category>> GetCategoryBreadCrumbAsync(Category category, IList<Category> allCategories = null, bool showHidden = false)
+        public virtual async Task<IList<Category>> GetCategoryBreadCrumbAsync(Category category, IList<Category> allCategories = null, bool showHidden = true)
         {
             if (category == null)
                 throw new ArgumentNullException(nameof(category));
