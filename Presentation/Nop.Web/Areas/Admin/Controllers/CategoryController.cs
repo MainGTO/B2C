@@ -32,6 +32,7 @@ using Nop.Web.Areas.Admin.Models.Catalog;
 using Nop.Web.Framework.Controllers;
 using Nop.Web.Framework.Mvc;
 using Nop.Web.Framework.Mvc.Filters;
+using DeepL;
 
 namespace Nop.Web.Areas.Admin.Controllers
 {
@@ -113,11 +114,106 @@ namespace Nop.Web.Areas.Admin.Controllers
 
         #region Utilities
 
-        protected virtual async Task UpdateLocalesAsync(Category category, CategoryModel model)
+        #region Translate DeppL
+
+        public async Task<string> DeppLTranslateTextAsync(string text, string sourceLanguage, string targetLanguage)
         {
-            // Google Translate API
-            //var localizedModels = await TranslateAndFillAsync<CategoryModel, CategoryLocalizedModel>(model);
-            //model.Locales = localizedModels;
+            System.Diagnostics.Debug.WriteLine($"Translating text: '{text}' from {sourceLanguage} to {targetLanguage}");
+
+            var authKey = "f2fc50f9-4601-cfc5-9eec-576e8a73cf41:fx";  // DeepL의 Auth Key
+            var translator = new Translator(authKey);
+            var translatedText = await translator.TranslateTextAsync(
+                  text,
+                  sourceLanguage,
+                  targetLanguage);
+
+            System.Diagnostics.Debug.WriteLine($"Translated text: '{translatedText.Text}'");
+            return translatedText.Text;
+        }
+
+        #endregion
+
+        protected virtual async Task UpdateLocalesAsync(Category category, CategoryModel model , bool api = false)
+        {
+            // 번역이 필요한 언어 ID 목록을 확인
+            var requiredLanguages = new List<int> { 1, 2, 3 }; // 1: 영어, 2: 한국어, 3: 중국어 
+
+            // model.Locales에 필요한 번역이 모두 있는지 확인
+            var existingLanguagesWithName = model.Locales.Where(l => !string.IsNullOrEmpty(l.Name)).Select(l => l.LanguageId).ToList();
+            //var existingLanguagesWithShortDescription = model.Locales.Where(l => !string.IsNullOrEmpty(l.ShortDescription)).Select(l => l.LanguageId).ToList();
+
+            // && requiredLanguages.All(r => existingLanguagesWithShortDescription.Contains(r)
+            // 이런식으로 번역할 필드 추가가 가능함
+
+            if (requiredLanguages.All(r => existingLanguagesWithName.Contains(r)))
+            {
+                var isUnchanged = true;
+                foreach (var locale in model.Locales)
+                {
+                    var currentLocalizedValue = await _localizedEntityService.GetLocalizedValueAsync(locale.LanguageId, category.Id, "Product", "Name");
+                    if (currentLocalizedValue != locale.Name)
+                    {
+                        isUnchanged = false;
+                        api = true;
+                        break;
+                    }
+                }
+
+                if (isUnchanged)
+                    return; // 모든 번역이 있고 변경되지 않았다면 메서드 종료
+            }
+
+            // api가 true라면 번역만 건너뛰고 나머지 작업을 수행
+            if (!api)
+            {
+                var allLanguages = new Dictionary<string, int>
+                {
+                    { "en-US", 1 },
+                    { "ko", 2 },
+                    { "zh", 3 }
+                };
+
+                // 기본 번역값으로 모든 언어에 대해 model.Name을 설정
+                var translations = new Dictionary<string, string>
+                {
+                    { "en-US", model.Name },
+                    { "ko", model.Name },
+                    { "zh", model.Name }
+                };
+
+                // model.Locales에서 Name이 설정되어 있는 항목에 대한 언어 코드를 allLanguages에서 제거
+                foreach (var locale in model.Locales.Where(l => !string.IsNullOrEmpty(l.Name)))
+                {
+                    var langCode = ConvertToLanguageCode(locale.LanguageId.ToString());
+                    if (allLanguages.ContainsKey(langCode))
+                    {
+                        allLanguages.Remove(langCode);
+                    }
+                }
+
+                // allLanguages에 남아있는 언어 코드에 대해 번역 수행
+                foreach (var langCode in allLanguages.Keys)
+                {
+                    if (langCode == "ko")
+                    {
+                        translations[langCode] = model.Name; // 한국어를 한국어로 번역하는 대신 기존 값을 사용
+                    }
+                    else
+                    {
+                        translations[langCode] = await DeppLTranslateTextAsync(model.Name, "ko", langCode);
+                    }
+                }
+
+                // 번역된 결과를 model.Locales에 추가
+                foreach (var entry in translations)
+                {
+                    model.Locales.Add(new CategoryLocalizedModel
+                    {
+                        LanguageId = allLanguages[entry.Key],
+                        Name = entry.Value ?? $"ProductLocalizedModel Name 값을 불러오지 못했습니다. (Language: {entry.Key})"
+                    });
+                }
+            }
 
             foreach (var localized in model.Locales)
             {
@@ -149,6 +245,21 @@ namespace Nop.Web.Areas.Admin.Controllers
                 //search engine name
                 var seName = await _urlRecordService.ValidateSeNameAsync(category, localized.SeName, localized.Name, false);
                 await _urlRecordService.SaveSlugAsync(category, seName, localized.LanguageId);
+            }
+        }
+
+        private static string ConvertToLanguageCode(string languageId)
+        {
+            switch (languageId)
+            {
+                case "1":
+                    return "en-US";
+                case "2":
+                    return "ko";
+                case "3":
+                    return "zh";
+                default:
+                    return languageId;
             }
         }
 
@@ -250,7 +361,7 @@ namespace Nop.Web.Areas.Admin.Controllers
         {
             try
             {
-                var apiKey = "AIzaSyBX9iR-8Xk0KdsMLcetDkophXpC3h-6NdQ";  // 추후에 환경 변수나 구성 파일에서 읽어오는 것으로 구현
+                var apiKey = "AIzaSyD4CI-ZD19kRHdzp-8Ag9hC_sEdNc6JZnY";  // 추후에 환경 변수나 구성 파일에서 읽어오는 것으로 구현
                 var url = $"https://translation.googleapis.com/language/translate/v2/detect?key={apiKey}&q={text}";
 
                 using (HttpClient client = new HttpClient())
@@ -351,7 +462,7 @@ namespace Nop.Web.Areas.Admin.Controllers
             {
                 System.Diagnostics.Debug.WriteLine($"Translating text: {text} from {sourceLanguage} to {targetLanguage}");
 
-                var apiKey = "AIzaSyBX9iR-8Xk0KdsMLcetDkophXpC3h-6NdQ";  // 추후에 환경 변수나 구성 파일에서 읽어오는 것으로 구현
+                var apiKey = "AIzaSyD4CI-ZD19kRHdzp-8Ag9hC_sEdNc6JZnY";  // 추후에 환경 변수나 구성 파일에서 읽어오는 것으로 구현
                 var encodedText = HttpUtility.UrlEncode(text);
                 var url = $"https://translation.googleapis.com/language/translate/v2?source={sourceLanguage}&target={targetLanguage}&key={apiKey}&q={encodedText}";
 
@@ -400,8 +511,8 @@ namespace Nop.Web.Areas.Admin.Controllers
             { 1, "en" },
             { 2, "ko" },
             { 3, "zh-CN" },
-            { 4, "vi" },
-            { 5, "th" },
+            // { 4, "vi" },
+            // { 5, "th" },
             // 추가 언어 가능
         };
 
