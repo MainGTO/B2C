@@ -57,6 +57,8 @@ using DocumentFormat.OpenXml.Spreadsheet;
 using System.Diagnostics;
 using FluentMigrator.Runner;
 using DocumentFormat.OpenXml.Drawing.Diagrams;
+using Category = Nop.Core.Domain.Catalog.Category;
+using DocumentFormat.OpenXml.EMMA;
 
 namespace Nop.Web.Areas.Admin.Controllers
 {
@@ -254,11 +256,14 @@ namespace Nop.Web.Areas.Admin.Controllers
                 // 번역된 결과를 model.Locales에 추가
                 foreach (var entry in translations)
                 {
-                    model.Locales.Add(new ProductLocalizedModel
+                    if (allLanguages.ContainsKey(entry.Key))
                     {
-                        LanguageId = allLanguages[entry.Key],
-                        Name = entry.Value ?? $"ProductLocalizedModel Name 값을 불러오지 못했습니다. (Language: {entry.Key})"
-                    });
+                        model.Locales.Add(new ProductLocalizedModel
+                        {
+                            LanguageId = allLanguages[entry.Key],
+                            Name = entry.Value ?? $"ProductLocalizedModel Name 값을 불러오지 못했습니다. (Language: {entry.Key})"
+                        });
+                    }
                 }
             }
 
@@ -376,11 +381,14 @@ namespace Nop.Web.Areas.Admin.Controllers
                 // 번역된 결과를 model.Locales에 추가
                 foreach (var entry in translations)
                 {
-                    model.Locales.Add(new ProductTagLocalizedModel
+                    if (allLanguages.ContainsKey(entry.Key))
                     {
-                        LanguageId = allLanguages[entry.Key],
-                        Name = entry.Value ?? $"ProductTagLocalizedModel Name 값을 불러오지 못했습니다. (Language: {entry.Key})"
-                    });
+                        model.Locales.Add(new ProductTagLocalizedModel
+                        {
+                            LanguageId = allLanguages[entry.Key],
+                            Name = entry.Value ?? $"ProductTagLocalizedModel Name 값을 불러오지 못했습니다. (Language: {entry.Key})"
+                        });
+                    }
                 }
             }
 
@@ -475,19 +483,26 @@ namespace Nop.Web.Areas.Admin.Controllers
                 // 번역된 결과를 model.Locales에 추가
                 foreach (var entry in translations)
                 {
-                    model.Locales.Add(new ProductAttributeMappingLocalizedModel
+                    if (allLanguages.ContainsKey(entry.Key))
                     {
-                        LanguageId = allLanguages[entry.Key],
-                        TextPrompt = entry.Value ?? $"ProductAttributeMappingLocalizedModel Name 값을 불러오지 못했습니다. (Language: {entry.Key})"
-                    });
+                        model.Locales.Add(new ProductAttributeMappingLocalizedModel
+                        {
+                            LanguageId = allLanguages[entry.Key],
+                            TextPrompt = entry.Value ?? $"ProductAttributeMappingLocalizedModel Name 값을 불러오지 못했습니다. (Language: {entry.Key})"
+                        });
+                    }
                 }
+
                 foreach (var entry in defaultTranslations)
                 {
-                    model.Locales.Add(new ProductAttributeMappingLocalizedModel
+                    if (allLanguages.ContainsKey(entry.Key))
                     {
-                        LanguageId = allLanguages[entry.Key],
-                        DefaultValue = entry.Value ?? $"ProductAttributeMappingLocalizedModel DefaultValue 값을 불러오지 못했습니다. (Language: {entry.Key})"
-                    });
+                        model.Locales.Add(new ProductAttributeMappingLocalizedModel
+                        {
+                            LanguageId = allLanguages[entry.Key],
+                            DefaultValue = entry.Value ?? $"ProductAttributeMappingLocalizedModel DefaultValue 값을 불러오지 못했습니다. (Language: {entry.Key})"
+                        });
+                    }
                 }
             }
 
@@ -570,11 +585,14 @@ namespace Nop.Web.Areas.Admin.Controllers
                 // 번역된 결과를 model.Locales에 추가
                 foreach (var entry in translations)
                 {
-                    model.Locales.Add(new ProductAttributeValueLocalizedModel
+                    if (allLanguages.ContainsKey(entry.Key))
                     {
-                        LanguageId = allLanguages[entry.Key],
-                        Name = entry.Value ?? $"ProductTagLocalizedModel Name 값을 불러오지 못했습니다. (Language: {entry.Key})"
-                    });
+                        model.Locales.Add(new ProductAttributeValueLocalizedModel
+                        {
+                            LanguageId = allLanguages[entry.Key],
+                            Name = entry.Value ?? $"ProductTagLocalizedModel Name 값을 불러오지 못했습니다. (Language: {entry.Key})"
+                        });
+                    }
                 }
             }
 
@@ -1586,9 +1604,57 @@ namespace Nop.Web.Areas.Admin.Controllers
             var swCategories = Stopwatch.StartNew();
             swCategories.Start();
             var languageId = 1; // 영어에 대한 ID
-            //var languageId = 3; // 중국어에 대한 ID
+                                //var languageId = 3; // 중국어에 대한 ID
 
-            var categories = await _categoryService.GetAllCategoriesAsync();
+            // 현재 날짜를 yyyyMMdd 형식으로 가져옴.
+            var today = DateTime.Now.ToString("yyyyMMdd");
+
+            // 현재 날짜에 해당하는 카테고리를 이름으로 조회
+            var categories = await _categoryService.GetAllCategoriesAsync(categoryName: today);
+            var todayCategory = categories?.FirstOrDefault();
+
+            int categoryId;
+
+            if (todayCategory == null)
+            {
+                // 해당 날짜의 카테고리가 존재하지 않는 경우, 새 카테고리를 생성
+
+                // Category 설정
+                var newCategory = new Category
+                {
+                    Name = today,
+                    Description = today,
+                    MetaKeywords = null,
+                    MetaDescription = null,
+                    MetaTitle = null,
+                    PageSizeOptions = "6,3,9",
+                    ParentCategoryId = 0,
+                    CategoryTemplateId = 1,
+                    PictureId = 0,
+                    PageSize = 5,
+                    AllowCustomersToSelectPageSize = true,
+                    ShowOnHomepage = false,
+                    IncludeInTopMenu = true,
+                    Published = true,
+                    Deleted = false,
+                    DisplayOrder = 0,
+                    PriceRangeFiltering = true,
+                    PriceTo = 10000,
+                    ManuallyPriceRange = true,
+                };
+
+                // 새로운 카테고리를 데이터베이스에 저장
+                await _categoryService.InsertCategoryAsync(newCategory);
+
+                // 새로 생성된 카테고리의 ID를 가져옴
+                categoryId = newCategory.Id;
+            }
+            else
+            {
+                // 해당 날짜의 카테고리가 이미 존재하는 경우, 해당 카테고리의 ID를 가져옴
+                categoryId = todayCategory.Id;
+            }
+
             var categorizedCategories = new List<CategorizedCategory>();
 
             foreach (var category in categories)
@@ -1712,7 +1778,7 @@ namespace Nop.Web.Areas.Admin.Controllers
                                 //categorizedCategory.Parent.Id,
                                 //categorizedCategory.SecondCategoryId,
                                 //childCategory.CategoryData.Id
-                                14114
+                                categoryId
                             },
                             IsTaxExempt = false,
                             NotifyAdminForQuantityBelow = 1,
