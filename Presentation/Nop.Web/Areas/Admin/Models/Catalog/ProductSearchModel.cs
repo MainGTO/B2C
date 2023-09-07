@@ -23,7 +23,7 @@ namespace Nop.Web.Areas.Admin.Models.Catalog
             AvailableProductTypes = new List<SelectListItem>();
             AvailablePublishedOptions = new List<SelectListItem>();
             LicenseCheckModel = new();
-            SearchCategoryId = 14091;
+            SearchCategoryId = new();
         }
 
         #endregion

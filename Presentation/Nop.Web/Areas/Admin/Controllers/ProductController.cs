@@ -1266,7 +1266,7 @@ namespace Nop.Web.Areas.Admin.Controllers
 
         #region Translate DeppL
 
-        public async Task<string> DeppLTranslateTextAsync(string text, string? sourceLanguage, string targetLanguage)
+        public async Task<string> DeppLTranslateTextAsync(string text, string sourceLanguage, string targetLanguage)
         {
             var authKey = "f2fc50f9-4601-cfc5-9eec-576e8a73cf41:fx";  // DeepL의 Auth Key
             System.Diagnostics.Debug.WriteLine($"Translating text: '{text}' from {sourceLanguage} to {targetLanguage}");
@@ -1448,8 +1448,8 @@ namespace Nop.Web.Areas.Admin.Controllers
             string queryLanguage = "en",
             string targetLanguage = "en")
         {
-            int maxRetryCount = 3; // 최대 재시도 횟수
-            int retryCount = 0;
+            var maxRetryCount = 3; // 최대 재시도 횟수
+            var retryCount = 0;
 
             while (retryCount < maxRetryCount)
             {
@@ -1495,6 +1495,7 @@ namespace Nop.Web.Areas.Admin.Controllers
 
                     if (retryCount >= maxRetryCount)
                     {
+                        System.Diagnostics.Debug.WriteLine($"GetcategoryNameProductsFromTaobaoAsync Error Text: '{ex.Message.ToString()}'");
                         return null; // 재시도 횟수를 초과하면 null을 반환
                     }
 
@@ -1666,7 +1667,7 @@ namespace Nop.Web.Areas.Admin.Controllers
                                       ? childCategory.TranslatedName
                                       : $"{parentName} {childCategory.TranslatedName}";
                     System.Diagnostics.Debug.WriteLine($"GetcategoryNameProductsFromTaobaoAsync : '{searchQuery}'");
-                    var nameProductInfoList = await GetcategoryNameProductsFromTaobaoAsync(searchQuery, size: 20);
+                    var nameProductInfoList = await GetcategoryNameProductsFromTaobaoAsync(searchQuery, size: 5);
 
                     if (nameProductInfoList == null)
                     {
@@ -1710,7 +1711,8 @@ namespace Nop.Web.Areas.Admin.Controllers
                             {
                                 //categorizedCategory.Parent.Id,
                                 //categorizedCategory.SecondCategoryId,
-                                childCategory.CategoryData.Id
+                                //childCategory.CategoryData.Id
+                                14114
                             },
                             IsTaxExempt = false,
                             NotifyAdminForQuantityBelow = 1,
@@ -2615,6 +2617,13 @@ namespace Nop.Web.Areas.Admin.Controllers
                 .Where(p => currentVendor == null || p.VendorId == currentVendor.Id).ToList());
 
             return Json(new { Result = true });
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetCategories()
+        {
+            var categories = await _categoryService.GetAllCategoriesAsync();
+            return Json(categories);
         }
 
         [HttpPost]

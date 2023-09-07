@@ -243,3 +243,43 @@
         </div>
     </div>
 </div>
+
+<script>
+    // 1. 카테고리 이름 필드의 변경 사항을 감지하여 쿠키에 값을 저장합니다.
+    $("#SearchCategoryName").on("change", function () {
+        var searchWord = $(this).val();
+        // 카테고리 검색어를 쿠키에 저장합니다.
+        document.cookie = "categorySearchWord=" + searchWord + ";path=/";
+    });
+
+    // 게시 드롭다운 박스의 변경 사항을 감지하여 쿠키에 값을 저장합니다.
+    $("#SearchPublishedId").on("change", function () {
+        var selectedValue = $(this).val();
+        // 게시 드롭다운 박스 선택 값을 쿠키에 저장합니다.
+        document.cookie = "categoryPublishedSelection=" + selectedValue + ";path=/";
+    });
+
+    $(document).ready(function () {
+        // 2. 페이지가 로드될 때 쿠키에서 카테고리 검색어 값을 가져와 필드에 설정합니다.
+        var searchWord = getCookie("categorySearchWord");
+        if (searchWord) {
+            $("#SearchCategoryName").val(searchWord);
+        }
+
+        // 3. 페이지가 로드될 때 쿠키에서 게시 드롭다운 박스 선택 값을 가져와 필드에 설정합니다.
+        var selectedPublishedValue = getCookie("categoryPublishedSelection");
+        if (selectedPublishedValue) {
+            $("#SearchPublishedId").val(selectedPublishedValue);
+        }
+
+        // 4. 기존의 DataTable 쿠키 설정 코드를 사용하여 DataTable을 초기화합니다.
+        initializeDataTableWithCookie('#categories-grid');
+    });
+
+    // 5. 쿠키 값을 가져오는 함수입니다.
+    function getCookie(name) {
+        var value = "; " + document.cookie;
+        var parts = value.split("; " + name + "=");
+        if (parts.length == 2) return parts.pop().split(";").shift();
+    }
+</script>

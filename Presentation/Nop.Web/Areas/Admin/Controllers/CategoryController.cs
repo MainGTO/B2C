@@ -112,8 +112,6 @@ namespace Nop.Web.Areas.Admin.Controllers
 
         #endregion
 
-        #region Utilities
-
         #region Translate DeppL
 
         public async Task<string> DeppLTranslateTextAsync(string text, string sourceLanguage, string targetLanguage)
@@ -132,6 +130,8 @@ namespace Nop.Web.Areas.Admin.Controllers
         }
 
         #endregion
+
+        #region Utilities
 
         protected virtual async Task UpdateLocalesAsync(Category category, CategoryModel model , bool api = false)
         {
@@ -207,11 +207,14 @@ namespace Nop.Web.Areas.Admin.Controllers
                 // 번역된 결과를 model.Locales에 추가
                 foreach (var entry in translations)
                 {
-                    model.Locales.Add(new CategoryLocalizedModel
+                    if (allLanguages.ContainsKey(entry.Key))
                     {
-                        LanguageId = allLanguages[entry.Key],
-                        Name = entry.Value ?? $"ProductLocalizedModel Name 값을 불러오지 못했습니다. (Language: {entry.Key})"
-                    });
+                        model.Locales.Add(new CategoryLocalizedModel
+                        {
+                            LanguageId = allLanguages[entry.Key],
+                            Name = entry.Value ?? $"ProductLocalizedModel Name 값을 불러오지 못했습니다. (Language: {entry.Key})"
+                        });
+                    }
                 }
             }
 

@@ -1,5 +1,21 @@
 ﻿@model ProductSearchModel
 
+<!-- jQuery 라이브러리 추가 -->
+<script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+
+<!-- DataTables CSS -->
+<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.10.21/css/jquery.dataTables.css" />
+
+<!-- DataTables JS -->
+<script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/1.10.21/js/jquery.dataTables.js"></script>
+
+
+<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" />
+<!-- Popper.js 라이브러리 추가 -->
+<script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
+<!-- Bootstrap JS 라이브러리 추가 -->
+<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+
 @using Nop.Core.Domain.Catalog;
 
 @{
@@ -100,6 +116,54 @@
             <div class="container-fluid">
                 <div class="form-horizontal">
                     <div class="cards-group">
+                        <div class="card card-default card-category">
+                            <div class="card-body">
+                                <div class="row category-row">
+                                    <!-- 여기에 카테고리를 추가합니다 -->
+                                </div>
+                            </div>
+                        </div>
+                        <script>
+                            function buildCategoryNavigation(data, container) {
+                                data.forEach(function (category) {
+                                    var categoryItem = $('<div class="category-item"></div>');
+                                    categoryItem.text(category.Name);
+                                    container.append(categoryItem);
+
+                                    if (category.SubCategories && category.SubCategories.length > 0) {
+                                        var subCategoryContainer = $('<div class="sub-category-container"></div>');
+                                        buildCategoryNavigation(category.SubCategories, subCategoryContainer);
+                                        categoryItem.append(subCategoryContainer);
+                                    }
+                                });
+                            }
+
+                            function fetchCategories() {
+                                $.ajax({
+                                    cache: false,
+                                    type: "GET",
+                                    url: "@(Url.Action("GetCategories", "Product"))",
+                                    dataType: "json",
+                                    success: function (data) {
+                                        alert("카테고리 데이터를 성공적으로 가져왔습니다!");
+
+                                        if (data && data.length > 0) {
+                                            var categoryRow = $(".category-row");
+                                            buildCategoryNavigation(data, categoryRow);
+                                        }
+                                    },
+                                    error: function (jqXHR, textStatus, errorThrown) {
+                                        alert("카테고리 데이터를 가져오는 데 실패했습니다: ", errorThrown);
+                                        console.error("카테고리 데이터를 가져오는 데 실패했습니다: ", errorThrown);
+                                    }
+                                });
+                            }
+
+                            $(document).ready(function () {
+                                fetchCategories();
+                            });
+                        </script>
+
                         <div class="card card-default card-search">
                             <div class="card-body">
                                 <div class="row search-row @(!hideSearchBlock ? "opened" : "")" data-hideAttribute="@hideSearchBlockAttributeName">
@@ -341,40 +405,151 @@
             });
         </script>
     </form>
+
+    <script>
+        $(document).ready(function () {
+            // 1. 각 검색 필드의 변경 사항을 감지하여 쿠키에 값을 저장
+
+            // 제품 이름 저장
+            $("#SearchProductName").on("change", function () {
+                var searchProductName = $(this).val();
+                document.cookie = "SearchProductName=" + searchProductName + ";path=/";
+            });
+
+            // 카테고리 ID 저장
+            $("#SearchCategoryId").on("change", function () {
+                var searchCategoryId = $(this).val();
+                document.cookie = "SearchCategoryId=" + searchCategoryId + ";path=/";
+            });
+
+            // 제조업체 ID 저장
+            $("#SearchManufacturerId").on("change", function () {
+                var searchManufacturerId = $(this).val();
+                document.cookie = "SearchManufacturerId=" + searchManufacturerId + ";path=/";
+            });
+
+            // 공급업체 ID 저장
+            $("#SearchVendorId").on("change", function () {
+                var searchVendorId = $(this).val();
+                document.cookie = "SearchVendorId=" + searchVendorId + ";path=/";
+            });
+
+            // 상점 ID 저장
+            $("#SearchStoreId").on("change", function () {
+                var searchStoreId = $(this).val();
+                document.cookie = "SearchStoreId=" + searchStoreId + ";path=/";
+            });
+
+            // 창고 ID 저장
+            $("#SearchWarehouseId").on("change", function () {
+                var searchWarehouseId = $(this).val();
+                document.cookie = "SearchWarehouseId=" + searchWarehouseId + ";path=/";
+            });
+
+            // 제품 유형 ID 저장
+            $("#SearchProductTypeId").on("change", function () {
+                var searchProductTypeId = $(this).val();
+                document.cookie = "SearchProductTypeId=" + searchProductTypeId + ";path=/";
+            });
+
+            // 게시 상태 저장
+            $("#SearchPublishedId").on("change", function () {
+                var searchPublishedId = $(this).val();
+                document.cookie = "SearchPublishedId=" + searchPublishedId + ";path=/";
+            });
+
+            // SKU로 직접 이동 저장
+            $("#GoDirectlyToSku").on("change", function () {
+                var goToProductBySku = $(this).val();
+                document.cookie = "GoDirectlyToSku=" + goToProductBySku + ";path=/";
+            });
+
+            // 2. 페이지가 로드될 때 쿠키에서 해당 값을 가져와 필드에 설정
+
+            // 제품 이름 설정
+            var storedSearchProductName = getCookie("SearchProductName");
+            if (storedSearchProductName) {
+                $("#SearchProductName").val(storedSearchProductName);
+            }
+
+            // 카테고리 ID 설정
+            var storedSearchCategoryId = getCookie("SearchCategoryId");
+            if (storedSearchCategoryId) {
+                $("#SearchCategoryId").val(storedSearchCategoryId);
+            }
+
+            // 제조업체 ID 설정
+            var storedSearchManufacturerId = getCookie("SearchManufacturerId");
+            if (storedSearchManufacturerId) {
+                $("#SearchManufacturerId").val(storedSearchManufacturerId);
+            }
+
+            // 공급업체 ID 설정
+            var storedSearchVendorId = getCookie("SearchVendorId");
+            if (storedSearchVendorId) {
+                $("#SearchVendorId").val(storedSearchVendorId);
+            }
+
+            // 상점 ID 설정
+            var storedSearchStoreId = getCookie("SearchStoreId");
+            if (storedSearchStoreId) {
+                $("#SearchStoreId").val(storedSearchStoreId);
+            }
+
+            // 창고 ID 설정
+            var storedSearchWarehouseId = getCookie("SearchWarehouseId");
+            if (storedSearchWarehouseId) {
+                $("#SearchWarehouseId").val(storedSearchWarehouseId);
+            }
+
+            // 제품 유형 ID 설정
+            var storedSearchProductTypeId = getCookie("SearchProductTypeId");
+            if (storedSearchProductTypeId) {
+                $("#SearchProductTypeId").val(storedSearchProductTypeId);
+            }
+
+            // 게시 상태 설정
+            var storedSearchPublishedId = getCookie("SearchPublishedId");
+            if (storedSearchPublishedId) {
+                $("#SearchPublishedId").val(storedSearchPublishedId);
+            }
+
+            // SKU로 직접 이동 설정
+            var storedGoDirectlyToSku = getCookie("GoDirectlyToSku");
+            if (storedGoDirectlyToSku) {
+                $("#GoDirectlyToSku").val(storedGoDirectlyToSku);
+            }
+
+            // 3. 기존의 DataTable 쿠키 설정 코드
+            var defaultPageLength = parseInt(getCookie('dataTablePageLength')) || 10;
+
+            var table;
+            if (!$.fn.dataTable.isDataTable('#products-grid')) {
+                table = $('#products-grid').DataTable({
+                    pageLength: defaultPageLength,
+                    retrieve: true
+                });
+            } else {
+                table = $('#products-grid').DataTable();
+            }
+
+            table.page.len(defaultPageLength).draw();
+
+            // 페이지 크기가 변경될 때 설정 저장하기
+            $('#products-grid').on('length.dt', function (e, settings, len) {
+                document.cookie = "dataTablePageLength=" + len + ";path=/";
+            });
+        });
+
+        // 쿠키 값을 가져오는 함수
+        function getCookie(name) {
+            var value = "; " + document.cookie;
+            var parts = value.split("; " + name + "=");
+            if (parts.length == 2) return parts.pop().split(";").shift();
+        }
+    </script>
 }
 
-<script>
-    $(document).ready(function () {
-        var displayModal = @((Model.LicenseCheckModel?.DisplayWarning == true || Model.LicenseCheckModel?.BlockPages == true).ToString().ToLower());
-        if (displayModal) {
-            $('#license-window').modal({
-                backdrop: 'static',
-                keyboard: false
-            });
-
-            $('#license-window').on('shown.bs.modal', function (event) {
-                var modalCloseEl = $(this).find('button.close');
-                var closeTextEl = $('span', modalCloseEl);
-
-                var startFrom = 5;
-                closeTextEl.text(startFrom);
-
-                const timer = setInterval(function () {
-                    if (startFrom-- > 0)
-                        closeTextEl.text(startFrom);
-                }, 1000);
-
-                setTimeout(function () {
-                    closeTextEl.html('&times;');
-                    modalCloseEl.on('click', function () {
-                        $('#license-window').modal('hide')
-                    });
-                    clearInterval(timer);
-                }, startFrom * 1000);
-            });
-        }
-    });
-</script>
 <div id="license-window" class="modal fade" tabindex="-1" role="dialog">
     <div class="modal-dialog" role="document">
         <div class="modal-content">
