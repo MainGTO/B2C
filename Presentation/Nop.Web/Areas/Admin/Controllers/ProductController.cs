@@ -1641,7 +1641,9 @@ namespace Nop.Web.Areas.Admin.Controllers
                     PriceRangeFiltering = true,
                     PriceTo = 10000,
                     ManuallyPriceRange = true,
-                };
+                    CreatedOnUtc = DateTime.UtcNow,
+                    UpdatedOnUtc = DateTime.UtcNow,
+            };
 
                 // 새로운 카테고리를 데이터베이스에 저장
                 await _categoryService.InsertCategoryAsync(newCategory);
@@ -2689,7 +2691,27 @@ namespace Nop.Web.Areas.Admin.Controllers
         public async Task<IActionResult> GetCategories()
         {
             var categories = await _categoryService.GetAllCategoriesAsync();
-            return Json(categories);
+
+            // 최상위 카테고리 필터링
+            var rootCategories = categories.Where(c => c.ParentCategoryId == 0).ToList();
+
+            // 중첩된 구조로 변환
+            var structuredData = rootCategories.Select(r => BuildNestedCategory(r, categories.ToList())).ToList();
+
+            return Json(structuredData);
+        }
+
+        private object BuildNestedCategory(Category category, List<Category> allCategories)
+        {
+            var children = allCategories.Where(c => c.ParentCategoryId == category.Id).ToList();
+
+            return new
+            {
+                id = category.Id,
+                parent = category.ParentCategoryId == 0 ? "#" : category.ParentCategoryId.ToString(),
+                text = category.Name,
+                children = children.Select(c => BuildNestedCategory(c, allCategories)).ToList()
+            };
         }
 
         [HttpPost]
