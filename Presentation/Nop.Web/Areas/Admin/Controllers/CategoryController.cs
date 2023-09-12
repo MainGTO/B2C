@@ -135,6 +135,10 @@ namespace Nop.Web.Areas.Admin.Controllers
 
         protected virtual async Task UpdateLocalesAsync(Category category, CategoryModel model , bool api = false)
         {
+            // model.Name이 숫자로만 구성되어 있다면 메서드 종료
+            if (int.TryParse(model.Name, out _))
+                return;
+
             // 번역이 필요한 언어 ID 목록을 확인
             var requiredLanguages = new List<int> { 1, 2, 3 }; // 1: 영어, 2: 한국어, 3: 중국어 
 

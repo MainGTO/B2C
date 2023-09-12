@@ -263,11 +263,11 @@
                         <div class="card card-default">
                             <div class="card-body">
                                 <button class="btn btn-secondary dropdown-toggle" type="button" id="categoryDropdown" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                                    선택한 카테고리
+                                    카테고리 선택
                                 </button>
                                 <ul class="dropdown-menu" id="customDropdownMenu" aria-labelledby="categoryDropdown"></ul>
                                 <!-- 선택한 카테고리 적용 버튼 -->
-                                <button class="btn btn-primary ml-2" id="applyCategory">선택한 카테고리 적용</button>
+                                <button class="btn btn-primary ml-2" id="applyCategory">선택 카테고리 적용</button>
 
                             </div>
                         </div>
@@ -292,10 +292,19 @@
 
                                 $dropdownMenu.on("click", ".final-category", function (event) {
                                     event.preventDefault();
-                                    var selectedCategory = $(this).text().trim();
+                                    var selectedCategoryText = $(this).text().trim();
                                     var selectedCategoryId = $(this).data('id');  // 카테고리 ID 가져오기
-                                    $('#categoryDropdown').text(selectedCategory).data('selected-id', selectedCategoryId);  // 버튼에 ID도 같이 저장
+                                    $('#categoryDropdown').text(selectedCategoryText).data('selected-id', selectedCategoryId);  // 버튼에 ID와 텍스트 저장
+                                    document.cookie = "SelectedCategoryId=" + selectedCategoryId + ";path=/"; // ID를 쿠키에 저장
+                                    document.cookie = "SelectedCategoryText=" + selectedCategoryText + ";path=/"; // 텍스트를 쿠키에 저장
                                 });
+
+                                // 페이지 로드 시 쿠키에서 값을 읽어와 해당 카테고리의 텍스트를 설정
+                                var storedSelectedCategoryId = getCookie("SelectedCategoryId");
+                                var storedSelectedCategoryText = getCookie("SelectedCategoryText");
+                                if (storedSelectedCategoryId && storedSelectedCategoryText) {
+                                    $('#categoryDropdown').text(storedSelectedCategoryText).data('selected-id', storedSelectedCategoryId);
+                                }
 
                                 $('body').on('mouseenter mouseleave', '.dropdown', function (e) {
                                     let dropdown = $(this).find('#customDropdownMenu');
@@ -327,11 +336,52 @@
                                     var selectedCategoryId = $('#categoryDropdown').data('selected-id');
 
                                     if (!selectedCategoryId || selectedCategory === "선택한 카테고리") {
-                                        alert("카테고리를 먼저 선택해주세요.");
+                                        swal("알림", "카테고리를 먼저 선택해주세요.", "warning");
                                         return;
                                     }
 
-                                    alert("선택한 카테고리 이름: " + selectedCategory + ", ID: " + selectedCategoryId);
+                                    var selectedProductIds = selectedIds; // 선택된 상품 ID 목록 가져오기
+
+                                    if (selectedProductIds.length === 0) {
+                                        swal("알림", "상품을 선택해주세요.", "warning");
+                                        return;
+                                    }
+
+                                    // 선택한 상품과 카테고리 정보 출력
+                                    swal({
+                                        title: "카테고리 변경 확인",
+                                        text: "선택한 상품 개수: " + selectedProductIds.length + "개\n변경할 카테고리 이름: " + selectedCategory + "\n\n카테고리를 변경하시겠습니까?",
+                                        type: "info",
+                                        showCancelButton: true,
+                                        confirmButtonText: "확인",
+                                        cancelButtonText: "취소",
+                                        closeOnConfirm: false
+                                    }, function (isConfirm) {
+                                        if (isConfirm) {
+                                            var postData = {
+                                                'productIds[]': selectedProductIds,
+                                                'categoryIds[]': [selectedCategoryId]
+                                            };
+                                            addAntiForgeryToken(postData); // CSRF token 추가
+                                            $.ajax({
+                                                cache: false,
+                                                type: "POST",
+                                                url: "@(Url.Action("UpdateProductCategories", "Product"))",
+                                                data: postData,
+                                                success: function (response) {
+                                                    if (response.Success) {
+                                                        swal("알림", "상품의 카테고리가 성공적으로 업데이트되었습니다.", "success");
+                                                        updateTable('#products-grid');
+                                                    } else {
+                                                        swal("알림", "카테고리 업데이트 중 오류가 발생했습니다.", "error");
+                                                    }
+                                                },
+                                                error: function () {
+                                                    swal("알림", "카테고리 업데이트 중 오류가 발생했습니다.", "error");
+                                                }
+                                            });
+                                        }
+                                    });
                                 });
 
                                 function renderCategoryDropdown(categories) {
@@ -400,8 +450,8 @@
                             new ColumnProperty(nameof(ProductModel.PictureThumbnailUrl))
                             {
                             Title = T("Admin.Catalog.Products.Fields.PictureThumbnailUrl").Text,
-                            Width = "100",
-                            Render = new RenderPicture(width: 100)
+                            Width = "150",
+                            Render = new RenderPicture(width: 200)
                             },
                             new ColumnProperty(nameof(ProductModel.Name))
                             {
@@ -410,28 +460,30 @@
                             new ColumnProperty(nameof(ProductModel.Sku))
                             {
                             Title = T("Admin.Catalog.Products.Fields.Sku").Text,
-                            Width = "100"
+                            Width = "50"
                             },
                             new ColumnProperty(nameof(ProductModel.Price))
                             {
                             Title = T("Admin.Catalog.Products.Fields.Price").Text,
-                            Render = new RenderCustom("renderColumnPrice")
+                            Render = new RenderCustom("renderColumnPrice"),
+                            Width = "50"
                             },
                             new ColumnProperty(nameof(ProductModel.StockQuantityStr))
                             {
-                            Title = T("Admin.Catalog.Products.Fields.StockQuantity").Text
+                            Title = T("Admin.Catalog.Products.Fields.StockQuantity").Text,
+                            Width = "70"
                             },
                             new ColumnProperty(nameof(ProductModel.Published))
                             {
                             Title = T("Admin.Catalog.Products.Fields.Published").Text,
-                            Width = "80",
+                            Width = "40",
                             ClassName = NopColumnClassDefaults.CenterAll,
                             Render = new RenderBoolean()
                             },
                             new ColumnProperty(nameof(ProductModel.Id))
                             {
                             Title = T("Admin.Common.Edit").Text,
-                            Width = "80",
+                            Width = "60",
                             ClassName =  NopColumnClassDefaults.Button,
                             Render = new RenderButtonEdit(new DataUrl("Edit"))
                             }
@@ -606,15 +658,13 @@
                 }
 
                 // 3. DataTable 초기화
-                var defaultPageLength = parseInt(getCookie('dataTablePageLength')) || 10;
+                var defaultPageLength = parseInt(getCookie('dataTablePageLength')) || 15;
                 var storedPageNumber = parseInt(getCookie('dataTablePageNumber'));
 
                 var table = $('#products-grid').DataTable({
-                    //pageLength: defaultPageLength,
+                    pageLength: defaultPageLength,
                     retrieve: true,
-                    displayStart: (storedPageNumber - 1) * defaultPageLength,
                     initComplete: function () {
-                        alert("aaaaaaa")
                         if (!isNaN(storedPageNumber) && storedPageNumber > 0) {
                             // 저장된 페이지 번호가 유효한지 확인
                             if (storedPageNumber <= table.page.info().pages) {
@@ -624,21 +674,23 @@
                                 alert("Stored page number in cookie is not valid. Defaulting to page 1.");
                             }
                         }
-                        table.page.len(defaultPageLength).draw(); // 페이지 크기 설정 및 그리기
                     }
                 });
+
+                table.page(3).draw(false);
+                table.page.len(defaultPageLength).draw(); // 페이지 크기 설정 및 그리기
 
                 // 페이지 크기가 변경될 때 설정 저장하기
                 $('#products-grid').on('length.dt', function (e, settings, len) {
                     document.cookie = "dataTablePageLength=" + len + ";path=/";
-                    alert("페이지 크기 " + len + "가 저장되었습니다.");
+                    //alert("페이지 크기 " + len + "가 저장되었습니다.");
                 });
 
                 // 페이지 번호 변경 감지 및 저장하기
                 $('#products-grid').on('page.dt', function () {
                     var currentPage = table.page() + 1; // 0-based index를 1-based index로 변환하여 저장
                     document.cookie = "dataTablePageNumber=" + currentPage + ";path=/";
-                    alert("페이지 번호 " + currentPage + "가 저장되었습니다.");
+                    //alert("페이지 번호 " + currentPage + "가 저장되었습니다.");
                 });
             });
 

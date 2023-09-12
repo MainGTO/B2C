@@ -189,8 +189,69 @@ namespace Nop.Web.Areas.Admin.Controllers
 
         #region Utilities
 
+
+        #region  CategoryEditMapping
+
+        [HttpPost]
+        public async Task<IActionResult> UpdateProductCategories(int[] productIds, int[] categoryIds)
+        {
+            if (productIds == null || categoryIds == null)
+                return Json(new { Success = false, Message = "상품 또는 카테고리 정보가 제공되지 않았습니다." });
+
+            foreach (var productId in productIds)
+            {
+                var product = await _productService.GetProductByIdAsync(productId);
+                if (product == null)
+                    continue;
+
+                var model = new ProductModel
+                {
+                    Id = productId,
+                    SelectedCategoryIds = categoryIds
+                };
+                await SaveCategoryMappingsAsync(product, model);
+            }
+
+            #region Remove Category
+
+            // 전체 카테고리 가져오기
+            var categories = await _categoryService.GetAllCategoriesAsync();
+
+            // "미분류 카테고리" 이름을 가진 카테고리를 찾기
+            var unclassifiedCategoryName = "미분류 카테고리";
+            var unclassifiedCategory = categories.FirstOrDefault(cat => cat.Name == unclassifiedCategoryName);
+
+            // "미분류 카테고리"의 ID를 가져옴
+            int unclassifiedCategoryId = unclassifiedCategory.Id;
+
+            // 하위 카테고리를 가져오기
+            var subCategories = await _categoryService.GetAllCategoriesByParentCategoryIdAsync(unclassifiedCategoryId);
+
+            foreach (var subCategory in subCategories)
+            {
+                // 각 하위 카테고리에 속한 상품 가져오기
+                var productsInSubCategory = await _categoryService.GetProductCategoriesByCategoryIdAsync(subCategory.Id);
+
+                if (!productsInSubCategory.Any())
+                {
+                    // 하위 카테고리에 속한 상품이 없는 경우, 해당 카테고리 삭제
+                    await _categoryService.DeleteCategoryAsync(subCategory);
+                }
+            }
+
+            #endregion
+
+            return Json(new { Success = true, Message = "상품의 카테고리가 성공적으로 업데이트되었습니다." });
+        }
+
+        #endregion
+
         protected virtual async Task UpdateLocalesAsync(Product product, ProductModel model, bool api = false)
         {
+            // model.Name이 숫자로만 구성되어 있다면 메서드 종료
+            if (int.TryParse(model.Name, out _))
+                return;
+
             // 번역이 필요한 언어 ID 목록을 확인
             var requiredLanguages = new List<int> { 1, 2, 3 }; // 1: 영어, 2: 한국어, 3: 중국어 
 
@@ -1601,19 +1662,48 @@ namespace Nop.Web.Areas.Admin.Controllers
 
         public virtual async Task<IActionResult> ApiCreate(bool continueEditing = false)
         {
+            // 카테고리 작업 소요시간 시작
             var swCategories = Stopwatch.StartNew();
             swCategories.Start();
-            var languageId = 1; // 영어에 대한 ID
-                                //var languageId = 3; // 중국어에 대한 ID
+
+            #region Remove Category
+
+            // 전체 카테고리 가져오기
+            var categories = await _categoryService.GetAllCategoriesAsync();
+
+            // "미분류 카테고리" 이름을 가진 카테고리를 찾기
+            var unclassifiedCategoryName = "미분류 카테고리";
+            var unclassifiedCategory = categories.FirstOrDefault(cat => cat.Name == unclassifiedCategoryName);
+
+            // "미분류 카테고리"의 ID를 가져옴
+            int unclassifiedCategoryId = unclassifiedCategory.Id;
+
+            // 하위 카테고리를 가져오기
+            var subCategories = await _categoryService.GetAllCategoriesByParentCategoryIdAsync(unclassifiedCategoryId);
+
+            foreach (var subCategory in subCategories)
+            {
+                // 각 하위 카테고리에 속한 상품 가져오기
+                var productsInSubCategory = await _categoryService.GetProductCategoriesByCategoryIdAsync(subCategory.Id);
+
+                if (!productsInSubCategory.Any())
+                {
+                    // 하위 카테고리에 속한 상품이 없는 경우, 해당 카테고리 삭제
+                    await _categoryService.DeleteCategoryAsync(subCategory);
+                }
+            }
+
+            #endregion
+
+            #region Create or use category
+
+            int categoryId;
 
             // 현재 날짜를 yyyyMMdd 형식으로 가져옴.
             var today = DateTime.Now.ToString("yyyyMMdd");
 
-            // 현재 날짜에 해당하는 카테고리를 이름으로 조회
-            var categories = await _categoryService.GetAllCategoriesAsync(categoryName: today);
-            var todayCategory = categories?.FirstOrDefault();
-
-            int categoryId;
+            // 하위 카테고리에서 현재 날짜와 같은 이름의 카테고리를 찾기
+            var todayCategory = subCategories.FirstOrDefault(cat => cat.Name == today);
 
             if (todayCategory == null)
             {
@@ -1627,8 +1717,8 @@ namespace Nop.Web.Areas.Admin.Controllers
                     MetaKeywords = null,
                     MetaDescription = null,
                     MetaTitle = null,
-                    PageSizeOptions = "6,3,9",
-                    ParentCategoryId = 0,
+                    PageSizeOptions = "50,100,150",
+                    ParentCategoryId = unclassifiedCategory?.Id ?? 0, // "미분류 카테고리"의 ID를 사용하거나 기본값으로 0을 사용
                     CategoryTemplateId = 1,
                     PictureId = 0,
                     PageSize = 5,
@@ -1643,7 +1733,7 @@ namespace Nop.Web.Areas.Admin.Controllers
                     ManuallyPriceRange = true,
                     CreatedOnUtc = DateTime.UtcNow,
                     UpdatedOnUtc = DateTime.UtcNow,
-            };
+                };
 
                 // 새로운 카테고리를 데이터베이스에 저장
                 await _categoryService.InsertCategoryAsync(newCategory);
@@ -1656,6 +1746,13 @@ namespace Nop.Web.Areas.Admin.Controllers
                 // 해당 날짜의 카테고리가 이미 존재하는 경우, 해당 카테고리의 ID를 가져옴
                 categoryId = todayCategory.Id;
             }
+
+            #endregion
+
+            #region Search language settings
+
+            var languageId = 1; //var languageId = 1; // 영어에 대한 ID
+                                //var languageId = 3; // 중국어에 대한 ID
 
             var categorizedCategories = new List<CategorizedCategory>();
 
@@ -1721,6 +1818,10 @@ namespace Nop.Web.Areas.Admin.Controllers
                 }
             }
 
+            #endregion
+
+
+            // 카테고리 작업 소요시간 종료
             swCategories.Stop();
             var ts = swCategories.Elapsed;
             var elapsedTime = $"{ts.Hours:00}:{ts.Minutes:00}:{ts.Seconds:00}.{ts.Milliseconds:000}";
@@ -1777,9 +1878,6 @@ namespace Nop.Web.Areas.Admin.Controllers
                             VisibleIndividually = true,
                             SelectedCategoryIds = new List<int>
                             {
-                                //categorizedCategory.Parent.Id,
-                                //categorizedCategory.SecondCategoryId,
-                                //childCategory.CategoryData.Id
                                 categoryId
                             },
                             IsTaxExempt = false,

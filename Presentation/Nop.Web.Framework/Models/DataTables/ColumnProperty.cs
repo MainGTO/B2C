@@ -84,6 +84,11 @@
         /// </summary>
         public bool Encode { get; set; }
 
+        /// <summary>
+        /// Enable or disable ordering on this column.
+        /// </summary>
+        public bool Orderable { get; set; }
+
         #endregion
     }
 }
