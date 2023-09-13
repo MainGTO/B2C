@@ -239,6 +239,9 @@
                         </div>
 
                         <style>
+                            .product-name-input {
+                                width: 100%;
+                            }
                             .dropdown-submenu {
                                 position: relative;
                             }
@@ -263,11 +266,11 @@
                         <div class="card card-default">
                             <div class="card-body">
                                 <button class="btn btn-secondary dropdown-toggle" type="button" id="categoryDropdown" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                                    카테고리 선택
+                                    @T("admin.catalog.products.fields.selectcategory")
                                 </button>
                                 <ul class="dropdown-menu" id="customDropdownMenu" aria-labelledby="categoryDropdown"></ul>
                                 <!-- 선택한 카테고리 적용 버튼 -->
-                                <button class="btn btn-primary ml-2" id="applyCategory">선택 카테고리 적용</button>
+                                <button class="btn btn-primary ml-2" id="applyCategory">@T("admin.catalog.products.fields.applyselectedcategories")</button>
 
                             </div>
                         </div>
@@ -418,84 +421,140 @@
 
                         <div class="card card-default">
                             <div class="card-body">
+                                <nop-alert asp-alert-id="updateNameFailed" />
                                 <nop-doc-reference asp-string-resource="@T("Admin.Documentation.Reference.Products", Docs.Products + Utm.OnAdmin)" />
 
                                 @await Html.PartialAsync("Table", new DataTablesModel
-                            {
-                            Name = "products-grid",
-                            UrlRead = new DataUrl("ProductList", "Product", null),
-                            SearchButtonId = "search-products",
-                            LengthMenu = Model.AvailablePageSizes,
-                            Filters = new List<FilterParameter>
-                            {
-                            new FilterParameter(nameof(Model.SearchProductName)),
-                            new FilterParameter(nameof(Model.SearchCategoryId)),
-                            new FilterParameter(nameof(Model.SearchIncludeSubCategories), typeof(bool)),
-                            new FilterParameter(nameof(Model.SearchManufacturerId)),
-                            new FilterParameter(nameof(Model.SearchStoreId)),
-                            new FilterParameter(nameof(Model.SearchWarehouseId)),
-                            new FilterParameter(nameof(Model.SearchVendorId)),
-                            new FilterParameter(nameof(Model.SearchProductTypeId)),
-                            new FilterParameter(nameof(Model.SearchPublishedId))
-                            },
-                            ColumnCollection = new List<ColumnProperty>
-                            {
-                            new ColumnProperty(nameof(ProductModel.Id))
-                            {
-                            IsMasterCheckBox = true,
-                            Render = new RenderCheckBox("checkbox_products"),
-                            ClassName =  NopColumnClassDefaults.CenterAll,
-                            Width = "50"
-                            },
-                            new ColumnProperty(nameof(ProductModel.PictureThumbnailUrl))
-                            {
-                            Title = T("Admin.Catalog.Products.Fields.PictureThumbnailUrl").Text,
-                            Width = "150",
-                            Render = new RenderPicture(width: 200)
-                            },
-                            new ColumnProperty(nameof(ProductModel.Name))
-                            {
-                            Title = T("Admin.Catalog.Products.Fields.Name").Text
-                            },
-                            new ColumnProperty(nameof(ProductModel.Sku))
-                            {
-                            Title = T("Admin.Catalog.Products.Fields.Sku").Text,
-                            Width = "50"
-                            },
-                            new ColumnProperty(nameof(ProductModel.Price))
-                            {
-                            Title = T("Admin.Catalog.Products.Fields.Price").Text,
-                            Render = new RenderCustom("renderColumnPrice"),
-                            Width = "50"
-                            },
-                            new ColumnProperty(nameof(ProductModel.StockQuantityStr))
-                            {
-                            Title = T("Admin.Catalog.Products.Fields.StockQuantity").Text,
-                            Width = "70"
-                            },
-                            new ColumnProperty(nameof(ProductModel.Published))
-                            {
-                            Title = T("Admin.Catalog.Products.Fields.Published").Text,
-                            Width = "40",
-                            ClassName = NopColumnClassDefaults.CenterAll,
-                            Render = new RenderBoolean()
-                            },
-                            new ColumnProperty(nameof(ProductModel.Id))
-                            {
-                            Title = T("Admin.Common.Edit").Text,
-                            Width = "60",
-                            ClassName =  NopColumnClassDefaults.Button,
-                            Render = new RenderButtonEdit(new DataUrl("Edit"))
-                            }
-                            }
-                            })
+                                {
+                                Name = "products-grid",
+                                UrlRead = new DataUrl("ProductList", "Product", null),
+                                SearchButtonId = "search-products",
+                                LengthMenu = Model.AvailablePageSizes,
+                                Filters = new List<FilterParameter>
+                                {
+                                new FilterParameter(nameof(Model.SearchProductName)),
+                                new FilterParameter(nameof(Model.SearchCategoryId)),
+                                new FilterParameter(nameof(Model.SearchIncludeSubCategories), typeof(bool)),
+                                new FilterParameter(nameof(Model.SearchManufacturerId)),
+                                new FilterParameter(nameof(Model.SearchStoreId)),
+                                new FilterParameter(nameof(Model.SearchWarehouseId)),
+                                new FilterParameter(nameof(Model.SearchVendorId)),
+                                new FilterParameter(nameof(Model.SearchProductTypeId)),
+                                new FilterParameter(nameof(Model.SearchPublishedId))
+                                },
+                                ColumnCollection = new List<ColumnProperty>
+                                {
+                                new ColumnProperty(nameof(ProductModel.Id))
+                                {
+                                IsMasterCheckBox = true,
+                                Render = new RenderCheckBox("checkbox_products"),
+                                ClassName =  NopColumnClassDefaults.CenterAll,
+                                Width = "50"
+                                },
+                                new ColumnProperty(nameof(ProductModel.PictureThumbnailUrl))
+                                {
+                                Title = T("Admin.Catalog.Products.Fields.PictureThumbnailUrl").Text,
+                                Width = "150",
+                                Render = new RenderPicture(width: 200)
+                                },
+                                new ColumnProperty(nameof(ProductModel.Name))
+                                {
+                                Title = T("Admin.Catalog.Products.Fields.Name").Text,
+                                Render = new RenderCustom("renderProductNameWithEditButton"),
+                                },
+                                new ColumnProperty(nameof(ProductModel.Sku))
+                                {
+                                Title = T("Admin.Catalog.Products.Fields.Sku").Text,
+                                Width = "80"
+                                },
+                                new ColumnProperty(nameof(ProductModel.Price))
+                                {
+                                Title = T("Admin.Catalog.Products.Fields.Price").Text,
+                                Render = new RenderCustom("renderColumnPrice"),
+                                Width = "50"
+                                },
+                                new ColumnProperty(nameof(ProductModel.StockQuantityStr))
+                                {
+                                Title = T("Admin.Catalog.Products.Fields.StockQuantity").Text,
+                                Width = "70"
+                                },
+                                new ColumnProperty(nameof(ProductModel.Published))
+                                {
+                                Title = T("Admin.Catalog.Products.Fields.Published").Text,
+                                Width = "40",
+                                ClassName = NopColumnClassDefaults.CenterAll,
+                                Render = new RenderBoolean()
+                                },
+                                new ColumnProperty(nameof(ProductModel.Id))
+                                {
+                                Title = T("Admin.Common.Edit").Text,
+                                Width = "60",
+                                ClassName =  NopColumnClassDefaults.Button,
+                                Render = new RenderButtonEdit(new DataUrl("Edit"))
+                                }
+                                }
+                                })
 
                                 <script>
                                     function renderColumnPrice(data, type, row, meta) {
                                         return (row.ProductTypeId != @((int)ProductType.GroupedProduct) ) ? data : null;
                                     }
 
+                                    var editProductNameText = '@T("Admin.Catalog.Products.Fields.productnameedit").Text';
+
+                                    function renderProductNameWithEditButton(data, type, row, meta) {
+                                        return '<span class="product-name-text">' + data + '</span> <button class="btn-edit-product-name" data-product-id="' + row.Id + '">' + editProductNameText + '</button>';
+                                    }
+
                                     $(document).ready(function () {
+                                        $('body').on('click', '.btn-edit-product-name', function () {
+                                            var $btn = $(this);
+                                            var originalName = $btn.siblings('.product-name-text').text();
+                                            var input = $('<input type="text" class="product-name-input" value="' + originalName + '"/>');
+                                            var updateButton = $('<button class="btn-update-product-name" data-product-id="' + $btn.data('product-id') + '">최신화</button>');
+                                            var cancelButton = $('<button class="btn-cancel-product-name">취소</button>');
+
+                                            $btn.siblings('.product-name-text').replaceWith(input);
+                                            $btn.after(updateButton).after(cancelButton).remove();
+
+                                            updateButton.on('click', function () {
+                                                event.preventDefault();
+                                                event.stopPropagation();
+                                                var newName = input.val().trim();
+                                                if (!newName) {
+                                                    swal('오류', '상품 이름은 빈 값일 수 없습니다.', 'error');
+                                                    input.focus();
+                                                    return;
+                                                }
+
+                                                var postData = {
+                                                    productId: updateButton.data('product-id'), // 최신화 버튼의 data-product-id 사용
+                                                    newName: newName
+                                                };
+                                                addAntiForgeryToken(postData);
+                                                $.ajax({
+                                                    cache: false,
+                                                    type: "POST",
+                                                    url: '@(Url.Action("UpdateProductName", "Product"))',
+                                                    data: postData,
+                                                    success: function () {
+                                                        input.replaceWith('<span class="product-name-text">' + newName + '</span>');
+                                                        cancelButton.remove();
+                                                        updateButton.replaceWith('<button class="btn-edit-product-name" data-product-id="' + updateButton.data('product-id') + '">수정</button>');
+                                                    },
+                                                    error: function (jqXHR, textStatus, errorThrown) {
+                                                        showAlert('updateNameFailed', errorThrown);
+                                                    }
+                                                });
+                                            });
+
+                                            cancelButton.on('click', function () {
+                                                input.replaceWith('<span class="product-name-text">' + originalName + '</span>');
+                                                cancelButton.remove();
+                                                updateButton.replaceWith('<button class="btn-edit-product-name" data-product-id="' + updateButton.data('product-id') + '">수정</button>');
+                                            });
+                                        });
+
                                         $('#delete-selected-action-confirmation-submit-button').bind('click', function () {
                                             var postData = {
                                                 selectedIds: selectedIds
@@ -518,10 +577,10 @@
                                                 }
                                             });
                                             $('#delete-selected-action-confirmation').modal('toggle');
-                                            return false;
+                                            // 모달창 안닫혀서 비활성화함
+                                            //return false;
                                         });
                                     });
-
                                 </script>
                                 <nop-alert asp-alert-id="deleteSelectedFailed" />
                                 <nop-alert asp-alert-id="nothingSelectedAlert" />
@@ -557,6 +616,11 @@
                 $("#SearchCategoryId").on("change", function () {
                     var searchCategoryId = $(this).val();
                     document.cookie = "SearchCategoryId=" + searchCategoryId + ";path=/";
+                });
+
+                $("#SearchIncludeSubCategories").on("change", function () {
+                    var searchIncludeSubCategories = $(this).prop('checked') ? 'on' : 'off';
+                    document.cookie = "SearchIncludeSubCategories=" + searchIncludeSubCategories + ";path=/";
                 });
 
                 // 제조업체 ID 저장
@@ -601,6 +665,9 @@
                     document.cookie = "GoDirectlyToSku=" + goToProductBySku + ";path=/";
                 });
 
+
+
+
                 // 2. 페이지가 로드될 때 쿠키에서 해당 값을 가져와 필드에 설정
 
                 // 제품 이름 설정
@@ -613,6 +680,11 @@
                 var storedSearchCategoryId = getCookie("SearchCategoryId");
                 if (storedSearchCategoryId) {
                     $("#SearchCategoryId").val(storedSearchCategoryId);
+                }
+
+                var searchIncludeSubCategories = getCookie("SearchIncludeSubCategories");
+                if (searchIncludeSubCategories) {
+                    $("#SearchIncludeSubCategories").prop('checked', searchIncludeSubCategories === 'on');
                 }
 
                 // 제조업체 ID 설정
@@ -662,6 +734,7 @@
                 var storedPageNumber = parseInt(getCookie('dataTablePageNumber'));
 
                 var table = $('#products-grid').DataTable({
+                    autoWidth: false,
                     pageLength: defaultPageLength,
                     retrieve: true,
                     initComplete: function () {

@@ -1717,7 +1717,7 @@ namespace Nop.Web.Areas.Admin.Controllers
                     MetaKeywords = null,
                     MetaDescription = null,
                     MetaTitle = null,
-                    PageSizeOptions = "50,100,150",
+                    PageSizeOptions = "50, 100, 150",
                     ParentCategoryId = unclassifiedCategory?.Id ?? 0, // "미분류 카테고리"의 ID를 사용하거나 기본값으로 0을 사용
                     CategoryTemplateId = 1,
                     PictureId = 0,
@@ -1749,7 +1749,7 @@ namespace Nop.Web.Areas.Admin.Controllers
 
             #endregion
 
-            #region Search language settings
+            #region Search Category language settings
 
             var languageId = 1; //var languageId = 1; // 영어에 대한 ID
                                 //var languageId = 3; // 중국어에 대한 ID
@@ -1759,7 +1759,7 @@ namespace Nop.Web.Areas.Admin.Controllers
             foreach (var category in categories)
             {
                 var parentCategory = await _categoryService.GetCategoryByIdAsync(category.ParentCategoryId);
-                if (parentCategory == null)
+                if (parentCategory == null || int.TryParse(parentCategory.Name, out _))
                 {
                     continue;
                 }
@@ -1826,6 +1826,8 @@ namespace Nop.Web.Areas.Admin.Controllers
             var ts = swCategories.Elapsed;
             var elapsedTime = $"{ts.Hours:00}:{ts.Minutes:00}:{ts.Seconds:00}.{ts.Milliseconds:000}";
             System.Diagnostics.Debug.WriteLine($"swCategories : '{elapsedTime}'");
+
+            categorizedCategories.Reverse();
 
             foreach (var categorizedCategory in categorizedCategories)
             {
@@ -2740,6 +2742,23 @@ namespace Nop.Web.Areas.Admin.Controllers
 
             //if we got this far, something failed, redisplay form
             return View(model);
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> UpdateProductName(int productId, string newName)
+        {
+            var product = await _productService.GetProductByIdAsync(productId);
+            if (product != null)
+            {
+                product.Name = newName;
+                await _productService.UpdateProductAsync(product);
+            }
+            else
+            {
+                return NotFound();
+            }
+
+            return Ok();
         }
 
         [HttpPost]
