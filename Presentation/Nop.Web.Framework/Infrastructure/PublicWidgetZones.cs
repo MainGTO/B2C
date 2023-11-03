@@ -203,5 +203,6 @@
         public static string VendorDetailsTop => "vendordetails_top";
         public static string WishlistBottom => "wishlist_bottom";
         public static string WishlistTop => "wishlist_top";
+        public static string HomepageBelowTop => "homepage_below_top";
     }
 }

@@ -124,6 +124,36 @@ namespace Nop.Services.Catalog
         }
 
         /// <summary>
+        /// Gets a product attribute by its name
+        /// </summary>
+        /// <param name="name">Product attribute name</param>
+        /// <returns>
+        /// A task that represents the asynchronous operation
+        /// The task result contains the product attribute matching the specified name or null if not found
+        /// </returns>
+        public async Task<ProductAttribute> GetProductAttributeByNameAsync(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                return null;
+
+            var query = _productAttributeRepository.Table;
+            query = query.Where(pa => pa.Name == name);
+
+            return await query.FirstOrDefaultAsync();
+        }
+
+        public async Task<PredefinedProductAttributeValue> GetPredefinedProductAttributeValueByNameAsync(int productAttributeId, string name)
+        {
+            if (string.IsNullOrWhiteSpace(name) || productAttributeId == 0)
+                return null;
+
+            var query = _predefinedProductAttributeValueRepository.Table;
+            query = query.Where(pav => pav.ProductAttributeId == productAttributeId && pav.Name == name);
+
+            return await query.FirstOrDefaultAsync();
+        }
+
+        /// <summary>
         /// Inserts a product attribute
         /// </summary>
         /// <param name="productAttribute">Product attribute</param>

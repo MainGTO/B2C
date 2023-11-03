@@ -1,4 +1,4 @@
-﻿@{
+﻿@* @{
     Layout = "_ColumnsOne";
 
     //title
@@ -13,4 +13,91 @@
     <div class="page-body">
         @T("StoreClosed.Hint")
     </div>
+</div> *@
+
+@{
+    Layout = "_ColumnsOne";
+
+    //title
+    NopHtml.AddTitleParts(T("PageTitle.StoreClosed").Text);
+    //page class
+    NopHtml.AppendPageCssClassParts("html-store-closed-page");
+}
+
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;600&display=swap" rel="stylesheet" />
+
+<style>
+    .store-closed-page {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: url('https://example.com/path/to/your/image.jpg') no-repeat center center/cover;
+        color: #8B4513; /* 갈색 */
+        padding: 50px;
+        border-radius: 10px;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        max-width: 800px;
+        margin: auto;
+        text-align: center;
+        font-family: 'Open Sans', sans-serif;
+    }
+
+    .page-title {
+        margin: 10px;
+    }
+
+        .page-title h1 {
+            font-size: 2.5em;
+            margin: 0;
+            padding: 5px;
+            white-space: nowrap;
+            font-weight: 600;
+        }
+
+    .page-body {
+        font-size: 1.5em;
+        margin: 10px;
+        padding: 5px;
+        white-space: nowrap;
+        font-weight: 300;
+    }
+
+    .countdown {
+        font-size: 2em;
+        margin-top: 20px;
+        color: #8B4513;
+    }
+</style>
+
+<div class="page store-closed-page">
+    <div class="page-title">
+        <h1>@T("StoreClosed")</h1>
+    </div>
+    <div class="page-body">
+        @T("StoreClosed.Hint")
+    </div>
+    <div id="countdown" class="countdown"></div>
 </div>
+
+<script>
+    function updateCountdown() {
+        var countdownElement = document.getElementById('countdown');
+        var targetDate = new Date('2023-12-31T00:00:00'); // 고정된 종료 날짜와 시간
+        var timeLeft = targetDate - new Date();
+
+        if (timeLeft > 0) {
+            var days = Math.floor(timeLeft / (1000 * 60 * 60 * 24));
+            var hours = Math.floor((timeLeft % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            var minutes = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
+            var seconds = Math.floor((timeLeft % (1000 * 60)) / 1000);
+
+            countdownElement.innerHTML = days + "d " + hours + "h " + minutes + "m " + seconds + "s ";
+        } else {
+            countdownElement.innerHTML = "EXPIRED";
+        }
+    }
+
+    updateCountdown();
+    setInterval(updateCountdown, 1000);
+</script>

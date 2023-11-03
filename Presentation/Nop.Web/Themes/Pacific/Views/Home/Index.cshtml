@@ -1,0 +1,81 @@
+﻿@using Nop.Core
+@using Nop.Services.Configuration
+@using Nop.Services.Localization
+
+@inject ILocalizationService localizationService
+@inject ISettingService settingService
+@inject IStoreContext storeContext
+
+@{
+    Layout = "_ColumnsOne";
+
+    var homepageTitle = await localizationService.GetLocalizedAsync(await storeContext.GetCurrentStoreAsync(), s => s.HomepageTitle);
+
+    //title
+    if (!string.IsNullOrEmpty(homepageTitle))
+    {
+        NopHtml.AddTitleParts(homepageTitle);
+    }
+
+    var homepageDescription = await localizationService.GetLocalizedAsync(await storeContext.GetCurrentStoreAsync(), s => s.HomepageDescription);
+
+    //meta
+    if (!string.IsNullOrEmpty(homepageDescription))
+    {
+        NopHtml.AddMetaDescriptionParts(homepageDescription);
+    }
+
+    //page class
+    NopHtml.AppendPageCssClassParts("html-home-page");
+
+    var storeId = (await storeContext.GetCurrentStoreAsync()).Id;
+
+    var homePageCategoryBoxLayout = await settingService.GetSettingByKeyAsync("pacificthemesettings.homepagecategoryboxlayout", "layout-1", storeId, true);
+    var homePageCategoryBoxLayoutClass = "category-boxes-" + homePageCategoryBoxLayout;
+
+    var homePageWelcomeText = await Component.InvokeAsync(typeof(TopicBlockViewComponent), new { systemName = "HomepageText" });
+    var homePageWelcomeTextImageId = await settingService.GetSettingByKeyAsync("pacificthemesettings.homepagetextbackgroundimageid", storeId, 0);
+    var homePageWelcomeTextImageClass = string.Empty;
+    if (homePageWelcomeTextImageId != 0)
+    {
+        homePageWelcomeTextImageClass = "with-image-background";
+    }
+
+    var homePageNumberOfFeaturedProductsPerRow = await settingService.GetSettingByKeyAsync("pacificthemesettings.homepagenumberoffeaturedproducts", "six", storeId, true);
+    var homePageNumberOfFeaturedProductsPerRowClass = "items-" + homePageNumberOfFeaturedProductsPerRow;
+}
+<div class="page home-page @homePageNumberOfFeaturedProductsPerRowClass">
+    <div class="page-body">
+        @await Component.InvokeAsync(typeof(WidgetViewComponent), new { widgetZone = PublicWidgetZones.HomepageTop })
+        <div class="home-page-categories-wrapper @homePageCategoryBoxLayoutClass">
+            <div class="home-page-slider">
+                @await Component.InvokeAsync("Widget", new { widgetZone = "home_page_main_slider" })
+            </div>
+        	@await Component.InvokeAsync(typeof(WidgetViewComponent), new { widgetZone = PublicWidgetZones.HomepageBeforeCategories })
+            @await Component.InvokeAsync(typeof(HomepageCategoriesViewComponent))
+        </div>
+        @if(!String.IsNullOrEmpty(await homePageWelcomeText.RenderHtmlContentAsync()))
+        {
+            <div class="home-page-welcome-message @homePageWelcomeTextImageClass">
+                @homePageWelcomeText
+            </div>
+        }
+        @await Component.InvokeAsync(typeof(WidgetViewComponent), new { widgetZone = PublicWidgetZones.HomepageBeforeProducts })
+        @await Component.InvokeAsync(typeof(HomepageProductsViewComponent))
+        @await Component.InvokeAsync(typeof(WidgetViewComponent), new { widgetZone = PublicWidgetZones.HomepageBeforeBestSellers })
+        @{
+            var bestSellers = await Component.InvokeAsync("HomepageBestSellers");
+        }
+        @if (!String.IsNullOrEmpty(await bestSellers.RenderHtmlContentAsync()))
+        {
+            <div class="bestsellers-wrapper">
+                @await Component.InvokeAsync(typeof(HomepageBestSellersViewComponent))
+            </div>
+        }
+        @await Component.InvokeAsync(typeof(WidgetViewComponent), new { widgetZone = PublicWidgetZones.HomepageBeforeNews })
+        @await Component.InvokeAsync(typeof(HomepageNewsViewComponent))
+        @await Component.InvokeAsync(typeof(WidgetViewComponent), new { widgetZone = PublicWidgetZones.HomepageBeforePoll })
+        @await Component.InvokeAsync(typeof(HomepagePollsViewComponent))
+        @await Component.InvokeAsync(typeof(WidgetViewComponent), new { widgetZone = PublicWidgetZones.HomepageBottom })
+    </div>
+</div>

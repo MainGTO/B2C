@@ -14,6 +14,8 @@ using Nop.Web.Areas.Admin.Infrastructure.Mapper.Extensions;
 using Nop.Web.Areas.Admin.Models.Catalog;
 using Nop.Web.Framework.Mvc;
 using Nop.Web.Framework.Mvc.Filters;
+using DeepL;
+using static Nop.Web.Areas.Admin.Controllers.ProductController;
 
 namespace Nop.Web.Areas.Admin.Controllers
 {
@@ -52,10 +54,118 @@ namespace Nop.Web.Areas.Admin.Controllers
 
         #endregion
 
+        #region Translate DeppL
+
+        public async Task<string> DeppLTranslateTextAsync(string text, string sourceLanguage, string targetLanguage)
+        {
+            var authKey = "67d0450a-748d-4bf2-d0ba-cf5dad9fa30f:fx";  // DeepL의 Auth Key
+            System.Diagnostics.Debug.WriteLine($"Translating text: '{text}' from {sourceLanguage} to {targetLanguage}");
+
+            var translator = new Translator(authKey);
+
+            // sourceLanguage가 null이거나 빈 문자열일 경우 null을 전달
+            var actualSourceLanguage = string.IsNullOrWhiteSpace(sourceLanguage) ? null : sourceLanguage;
+            var translatedText = await translator.TranslateTextAsync(text, actualSourceLanguage, targetLanguage);
+
+            System.Diagnostics.Debug.WriteLine($"Translated text: '{translatedText.Text}'");
+            return translatedText.Text;
+        }
+
+        #endregion
+
         #region Utilities
 
-        protected virtual async Task UpdateLocalesAsync(ProductAttribute productAttribute, ProductAttributeModel model)
+        protected virtual async Task UpdateLocalesAsync(ProductAttribute productAttribute, ProductAttributeModel model, bool api = false)
         {
+            model.Locales = model.Locales.Where(x => !string.IsNullOrEmpty(x.Name)).ToList();
+
+            // 번역이 필요한 언어 ID 목록을 확인
+            var requiredLanguages = new List<int> { 1, 2, 3 }; // 1: 영어, 2: 한국어, 3: 중국어 
+
+            // model.Locales에 필요한 번역이 모두 있는지 확인
+            var existingLanguagesWithName = model.Locales.Where(l => !string.IsNullOrEmpty(l.Name)).Select(l => l.LanguageId).ToList();
+            //var existingLanguagesWithShortDescription = model.Locales.Where(l => !string.IsNullOrEmpty(l.ShortDescription)).Select(l => l.LanguageId).ToList();
+
+            // && requiredLanguages.All(r => existingLanguagesWithShortDescription.Contains(r)
+            // 이런식으로 번역할 필드 추가가 가능함
+
+            if (requiredLanguages.All(r => existingLanguagesWithName.Contains(r)))
+            {
+                var isUnchanged = true;
+                foreach (var locale in model.Locales)
+                {
+                    var currentLocalizedValue = await _localizedEntityService.GetLocalizedValueAsync(locale.LanguageId, productAttribute.Id, "Product", "Name");
+                    if (currentLocalizedValue != locale.Name)
+                    {
+                        isUnchanged = false;
+                        api = true;
+                        break;
+                    }
+                }
+
+                if (isUnchanged)
+                    return; // 모든 번역이 있고 변경되지 않았다면 메서드 종료
+            }
+
+            // api가 true라면 번역만 건너뛰고 나머지 작업을 수행
+            if (!api)
+            {
+                var allLanguages = new Dictionary<string, int>
+                {
+                    { "en-US", 1 },
+                    { "ko", 2 },
+                    { "zh", 3 }
+                };
+
+                // 기본 번역값으로 모든 언어에 대해 model.Name을 설정
+                var translations = new Dictionary<string, string>
+                {
+                    { "en-US", model.Name },
+                    { "ko", model.Name },
+                    { "zh", model.Name }
+                };
+
+                // model.Locales에서 Name이 설정되어 있는 항목에 대한 언어 코드를 allLanguages에서 제거
+                foreach (var locale in model.Locales.Where(l => !string.IsNullOrEmpty(l.Name)))
+                {
+                    var langCode = ConvertToLanguageCode(locale.LanguageId.ToString());
+                    if (allLanguages.ContainsKey(langCode))
+                    {
+                        allLanguages.Remove(langCode);
+                    }
+                }
+
+                // allLanguages에 남아있는 언어 코드에 대해 번역 수행
+                foreach (var langCode in allLanguages.Keys)
+                {
+                    if (langCode == "ko")
+                    {
+                        translations[langCode] = model.Name; // 한국어를 한국어로 번역하는 대신 기존 값을 사용
+                    }
+                    else if (int.TryParse(model.Name, out _))
+                    {
+                        translations[langCode] = model.Name; // model.Name이 숫자로만 구성되어 있다면 그대로 사용
+                    }
+                    else
+                    {
+                        translations[langCode] = await DeppLTranslateTextAsync(model.Name, "ko", langCode);
+                    }
+                }
+
+                // 번역된 결과를 model.Locales에 추가
+                foreach (var entry in translations)
+                {
+                    if (allLanguages.ContainsKey(entry.Key))
+                    {
+                        model.Locales.Add(new ProductAttributeLocalizedModel
+                        {
+                            LanguageId = allLanguages[entry.Key],
+                            Name = entry.Value ?? $"ProductLocalizedModel Name 값을 불러오지 못했습니다. (Language: {entry.Key})"
+                        });
+                    }
+                }
+            }
+
             foreach (var localized in model.Locales)
             {
                 await _localizedEntityService.SaveLocalizedValueAsync(productAttribute,
@@ -70,8 +180,97 @@ namespace Nop.Web.Areas.Admin.Controllers
             }
         }
 
-        protected virtual async Task UpdateLocalesAsync(PredefinedProductAttributeValue ppav, PredefinedProductAttributeValueModel model)
+        protected virtual async Task UpdateLocalesAsync(PredefinedProductAttributeValue ppav, PredefinedProductAttributeValueModel model, bool api = false)
         {
+            model.Locales = model.Locales.Where(x => !string.IsNullOrEmpty(x.Name)).ToList();
+
+            // 번역이 필요한 언어 ID 목록을 확인
+            var requiredLanguages = new List<int> { 1, 2, 3 }; // 1: 영어, 2: 한국어, 3: 중국어 
+
+            // model.Locales에 필요한 번역이 모두 있는지 확인
+            var existingLanguagesWithName = model.Locales.Where(l => !string.IsNullOrEmpty(l.Name)).Select(l => l.LanguageId).ToList();
+            //var existingLanguagesWithShortDescription = model.Locales.Where(l => !string.IsNullOrEmpty(l.ShortDescription)).Select(l => l.LanguageId).ToList();
+
+            // && requiredLanguages.All(r => existingLanguagesWithShortDescription.Contains(r)
+            // 이런식으로 번역할 필드 추가가 가능함
+
+            if (requiredLanguages.All(r => existingLanguagesWithName.Contains(r)))
+            {
+                var isUnchanged = true;
+                foreach (var locale in model.Locales)
+                {
+                    var currentLocalizedValue = await _localizedEntityService.GetLocalizedValueAsync(locale.LanguageId, ppav.Id, "Product", "Name");
+                    if (currentLocalizedValue != locale.Name)
+                    {
+                        isUnchanged = false;
+                        api = true;
+                        break;
+                    }
+                }
+
+                if (isUnchanged)
+                    return; // 모든 번역이 있고 변경되지 않았다면 메서드 종료
+            }
+
+            // api가 true라면 번역만 건너뛰고 나머지 작업을 수행
+            if (!api)
+            {
+                var allLanguages = new Dictionary<string, int>
+                {
+                    { "en-US", 1 },
+                    { "ko", 2 },
+                    { "zh", 3 }
+                };
+
+                // 기본 번역값으로 모든 언어에 대해 model.Name을 설정
+                var translations = new Dictionary<string, string>
+                {
+                    { "en-US", model.Name },
+                    { "ko", model.Name },
+                    { "zh", model.Name }
+                };
+
+                // model.Locales에서 Name이 설정되어 있는 항목에 대한 언어 코드를 allLanguages에서 제거
+                foreach (var locale in model.Locales.Where(l => !string.IsNullOrEmpty(l.Name)))
+                {
+                    var langCode = ConvertToLanguageCode(locale.LanguageId.ToString());
+                    if (allLanguages.ContainsKey(langCode))
+                    {
+                        allLanguages.Remove(langCode);
+                    }
+                }
+
+                // allLanguages에 남아있는 언어 코드에 대해 번역 수행
+                foreach (var langCode in allLanguages.Keys)
+                {
+                    if (langCode == "ko")
+                    {
+                        translations[langCode] = model.Name; // 한국어를 한국어로 번역하는 대신 기존 값을 사용
+                    }
+                    else if (int.TryParse(model.Name, out _))
+                    {
+                        translations[langCode] = model.Name; // model.Name이 숫자로만 구성되어 있다면 그대로 사용
+                    }
+                    else
+                    {
+                        translations[langCode] = await DeppLTranslateTextAsync(model.Name, "ko", langCode);
+                    }
+                }
+
+                // 번역된 결과를 model.Locales에 추가
+                foreach (var entry in translations)
+                {
+                    if (allLanguages.ContainsKey(entry.Key))
+                    {
+                        model.Locales.Add(new PredefinedProductAttributeValueLocalizedModel
+                        {
+                            LanguageId = allLanguages[entry.Key],
+                            Name = entry.Value ?? $"ProductLocalizedModel Name 값을 불러오지 못했습니다. (Language: {entry.Key})"
+                        });
+                    }
+                }
+            }
+
             foreach (var localized in model.Locales)
             {
                 await _localizedEntityService.SaveLocalizedValueAsync(ppav,
@@ -82,6 +281,21 @@ namespace Nop.Web.Areas.Admin.Controllers
         }
 
         #endregion
+
+        private static string ConvertToLanguageCode(string languageId)
+        {
+            switch (languageId)
+            {
+                case "1":
+                    return "en-US";
+                case "2":
+                    return "ko";
+                case "3":
+                    return "zh";
+                default:
+                    return languageId;
+            }
+        }
 
         #region Methods
 
@@ -131,7 +345,7 @@ namespace Nop.Web.Areas.Admin.Controllers
         {
             if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageAttributes))
                 return AccessDeniedView();
-
+                        
             if (ModelState.IsValid)
             {
                 var productAttribute = model.ToEntity<ProductAttribute>();
@@ -178,6 +392,8 @@ namespace Nop.Web.Areas.Admin.Controllers
         {
             if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageAttributes))
                 return AccessDeniedView();
+
+            model.Name = await DeppLTranslateTextAsync(model.Name, "", LanguageCode.Korean);
 
             //try to get a product attribute with the specified id
             var productAttribute = await _productAttributeService.GetProductAttributeByIdAsync(model.Id);

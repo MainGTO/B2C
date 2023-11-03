@@ -85,6 +85,7 @@ namespace Nop.Web.Areas.Admin.Factories
         private readonly NopHttpClient _nopHttpClient;
         private readonly TaxSettings _taxSettings;
         private readonly VendorSettings _vendorSettings;
+        private readonly ILocalizedEntityService _localizedEntityService;
 
         #endregion
 
@@ -128,7 +129,8 @@ namespace Nop.Web.Areas.Admin.Factories
             MeasureSettings measureSettings,
             NopHttpClient nopHttpClient,
             TaxSettings taxSettings,
-            VendorSettings vendorSettings)
+            VendorSettings vendorSettings,
+            ILocalizedEntityService localizedEntityService)
         {
             _catalogSettings = catalogSettings;
             _currencySettings = currencySettings;
@@ -169,6 +171,7 @@ namespace Nop.Web.Areas.Admin.Factories
             _nopHttpClient = nopHttpClient;
             _taxSettings = taxSettings;
             _vendorSettings = vendorSettings;
+            _localizedEntityService = localizedEntityService;
         }
 
         #endregion
@@ -790,15 +793,21 @@ namespace Nop.Web.Areas.Admin.Factories
                 keywords: searchModel.SearchProductName,
                 pageIndex: searchModel.Page - 1, pageSize: searchModel.PageSize,
                 overridePublished: overridePublished,
-                orderBy: ProductSortingEnum.IdDesc);
-            // 정렬
+                orderBy: ProductSortingEnum.IdDesc); // 정렬(sort)
+
             //prepare list model
             var model = await new ProductListModel().PrepareToGridAsync(searchModel, products, () =>
             {
                 return products.SelectAwait(async product =>
                 {
+                    // Get current language of the admin
+                    var currentLanguage = await _workContext.GetWorkingLanguageAsync();
+
                     //fill in model values from the entity
                     var productModel = product.ToModel<ProductModel>();
+
+                    // Localize product name based on admin's current language
+                    productModel.Name = await _localizedEntityService.GetLocalizedValueAsync(currentLanguage.Id, product.Id, "Product", "Name");
 
                     //little performance optimization: ensure that "FullDescription" is not returned
                     productModel.FullDescription = string.Empty;

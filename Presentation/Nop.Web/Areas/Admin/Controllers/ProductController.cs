@@ -59,6 +59,7 @@ using FluentMigrator.Runner;
 using DocumentFormat.OpenXml.Drawing.Diagrams;
 using Category = Nop.Core.Domain.Catalog.Category;
 using DocumentFormat.OpenXml.EMMA;
+using LinqToDB.Linq.Builder;
 
 namespace Nop.Web.Areas.Admin.Controllers
 {
@@ -248,9 +249,7 @@ namespace Nop.Web.Areas.Admin.Controllers
 
         protected virtual async Task UpdateLocalesAsync(Product product, ProductModel model, bool api = false)
         {
-            // model.Name이 숫자로만 구성되어 있다면 메서드 종료
-            if (int.TryParse(model.Name, out _))
-                return;
+            model.Locales = model.Locales.Where(x => !string.IsNullOrEmpty(x.Name)).ToList();
 
             // 번역이 필요한 언어 ID 목록을 확인
             var requiredLanguages = new List<int> { 1, 2, 3 }; // 1: 영어, 2: 한국어, 3: 중국어 
@@ -308,10 +307,21 @@ namespace Nop.Web.Areas.Admin.Controllers
                     }
                 }
 
-                // allLanguages에 남아있는 언어 코드에 대해 번역 수행 (단, 'ko'는 제외)
-                foreach (var langCode in allLanguages.Keys.Except(new[] { "ko" }))
+                // allLanguages에 남아있는 언어 코드에 대해 번역 수행
+                foreach (var langCode in allLanguages.Keys)
                 {
-                    translations[langCode] = await DeppLTranslateTextAsync(model.Name, "ko", langCode);
+                    if (langCode == "ko")
+                    {
+                        translations[langCode] = model.Name; // 한국어를 한국어로 번역하는 대신 기존 값을 사용
+                    }
+                    else if (int.TryParse(model.Name, out _))
+                    {
+                        translations[langCode] = model.Name; // model.Name이 숫자로만 구성되어 있다면 그대로 사용
+                    }
+                    else
+                    {
+                        translations[langCode] = await DeppLTranslateTextAsync(model.Name, "ko", langCode);
+                    }
                 }
 
                 // 번역된 결과를 model.Locales에 추가
@@ -580,13 +590,16 @@ namespace Nop.Web.Areas.Admin.Controllers
             }
         }
 
-        protected virtual async Task UpdateLocalesAsync(ProductAttributeValue pav, ProductAttributeValueModel model , bool api = false)
+        protected virtual async Task UpdateLocalesAsync(ProductAttribute productAttribute, ProductAttributeModel model, bool api = false)
         {
+            model.Locales = model.Locales.Where(x => !string.IsNullOrEmpty(x.Name)).ToList();
+
             // 번역이 필요한 언어 ID 목록을 확인
             var requiredLanguages = new List<int> { 1, 2, 3 }; // 1: 영어, 2: 한국어, 3: 중국어 
 
             // model.Locales에 필요한 번역이 모두 있는지 확인
             var existingLanguagesWithName = model.Locales.Where(l => !string.IsNullOrEmpty(l.Name)).Select(l => l.LanguageId).ToList();
+            //var existingLanguagesWithShortDescription = model.Locales.Where(l => !string.IsNullOrEmpty(l.ShortDescription)).Select(l => l.LanguageId).ToList();
 
             // && requiredLanguages.All(r => existingLanguagesWithShortDescription.Contains(r)
             // 이런식으로 번역할 필드 추가가 가능함
@@ -596,7 +609,7 @@ namespace Nop.Web.Areas.Admin.Controllers
                 var isUnchanged = true;
                 foreach (var locale in model.Locales)
                 {
-                    var currentLocalizedValue = await _localizedEntityService.GetLocalizedValueAsync(locale.LanguageId, pav.Id, "ProductAttributeValue", "Name");
+                    var currentLocalizedValue = await _localizedEntityService.GetLocalizedValueAsync(locale.LanguageId, productAttribute.Id, "Product", "Name");
                     if (currentLocalizedValue != locale.Name)
                     {
                         isUnchanged = false;
@@ -637,10 +650,126 @@ namespace Nop.Web.Areas.Admin.Controllers
                     }
                 }
 
-                // allLanguages에 남아있는 언어 코드에 대해 번역 수행 (단, 'ko'는 제외)
-                foreach (var langCode in allLanguages.Keys.Except(new[] { "ko" }))
+                // allLanguages에 남아있는 언어 코드에 대해 번역 수행
+                foreach (var langCode in allLanguages.Keys)
                 {
-                    translations[langCode] = await DeppLTranslateTextAsync(model.Name, "ko", langCode);
+                    if (langCode == "ko")
+                    {
+                        translations[langCode] = model.Name; // 한국어를 한국어로 번역하는 대신 기존 값을 사용
+                    }
+                    else if (int.TryParse(model.Name, out _))
+                    {
+                        translations[langCode] = model.Name; // model.Name이 숫자로만 구성되어 있다면 그대로 사용
+                    }
+                    else
+                    {
+                        translations[langCode] = await DeppLTranslateTextAsync(model.Name, "ko", langCode);
+                    }
+                }
+
+                // 번역된 결과를 model.Locales에 추가
+                foreach (var entry in translations)
+                {
+                    if (allLanguages.ContainsKey(entry.Key))
+                    {
+                        model.Locales.Add(new ProductAttributeLocalizedModel
+                        {
+                            LanguageId = allLanguages[entry.Key],
+                            Name = entry.Value ?? $"ProductLocalizedModel Name 값을 불러오지 못했습니다. (Language: {entry.Key})"
+                        });
+                    }
+                }
+            }
+
+            foreach (var localized in model.Locales)
+            {
+                await _localizedEntityService.SaveLocalizedValueAsync(productAttribute,
+                    x => x.Name,
+                    localized.Name,
+                    localized.LanguageId);
+
+                await _localizedEntityService.SaveLocalizedValueAsync(productAttribute,
+                    x => x.Description,
+                    localized.Description,
+                    localized.LanguageId);
+            }
+        }
+
+        protected virtual async Task UpdateLocalesAsync(ProductAttributeValue pav, ProductAttributeValueModel model, bool api = false)
+        {
+            model.Locales = model.Locales.Where(x => !string.IsNullOrEmpty(x.Name)).ToList();
+
+            // 번역이 필요한 언어 ID 목록을 확인
+            var requiredLanguages = new List<int> { 1, 2, 3 }; // 1: 영어, 2: 한국어, 3: 중국어 
+
+            // model.Locales에 필요한 번역이 모두 있는지 확인
+            var existingLanguagesWithName = model.Locales.Where(l => !string.IsNullOrEmpty(l.Name)).Select(l => l.LanguageId).ToList();
+            //var existingLanguagesWithShortDescription = model.Locales.Where(l => !string.IsNullOrEmpty(l.ShortDescription)).Select(l => l.LanguageId).ToList();
+
+            // && requiredLanguages.All(r => existingLanguagesWithShortDescription.Contains(r)
+            // 이런식으로 번역할 필드 추가가 가능함
+
+            if (requiredLanguages.All(r => existingLanguagesWithName.Contains(r)))
+            {
+                var isUnchanged = true;
+                foreach (var locale in model.Locales)
+                {
+                    var currentLocalizedValue = await _localizedEntityService.GetLocalizedValueAsync(locale.LanguageId, pav.Id, "Product", "Name");
+                    if (currentLocalizedValue != locale.Name)
+                    {
+                        isUnchanged = false;
+                        api = true;
+                        break;
+                    }
+                }
+
+                if (isUnchanged)
+                    return; // 모든 번역이 있고 변경되지 않았다면 메서드 종료
+            }
+
+            // api가 true라면 번역만 건너뛰고 나머지 작업을 수행
+            if (!api)
+            {
+                var allLanguages = new Dictionary<string, int>
+                {
+                    { "en-US", 1 },
+                    { "ko", 2 },
+                    { "zh", 3 }
+                };
+
+                // 기본 번역값으로 모든 언어에 대해 model.Name을 설정
+                var translations = new Dictionary<string, string>
+                {
+                    { "en-US", model.Name },
+                    { "ko", model.Name },
+                    { "zh", model.Name }
+                };
+
+                // model.Locales에서 Name이 설정되어 있는 항목에 대한 언어 코드를 allLanguages에서 제거
+                foreach (var locale in model.Locales.Where(l => !string.IsNullOrEmpty(l.Name)))
+                {
+                    var langCode = ConvertToLanguageCode(locale.LanguageId.ToString());
+                    if (allLanguages.ContainsKey(langCode))
+                    {
+                        allLanguages.Remove(langCode);
+                    }
+                }
+
+                // allLanguages에 남아있는 언어 코드에 대해 번역 수행
+                foreach (var langCode in allLanguages.Keys)
+                {
+                    if (langCode == "ko")
+                    {
+                        translations[langCode] = model.Name; // 한국어를 한국어로 번역하는 대신 기존 값을 사용
+                    }
+                    else if (int.TryParse(model.Name, out _))
+                    {
+                        translations[langCode] = model.Name; // model.Name이 숫자로만 구성되어 있다면 그대로 사용
+                    }
+                    else
+                    {
+                        translations[langCode] = await DeppLTranslateTextAsync(model.Name, "ko", langCode);
+                    }
                 }
 
                 // 번역된 결과를 model.Locales에 추가
@@ -651,7 +780,7 @@ namespace Nop.Web.Areas.Admin.Controllers
                         model.Locales.Add(new ProductAttributeValueLocalizedModel
                         {
                             LanguageId = allLanguages[entry.Key],
-                            Name = entry.Value ?? $"ProductTagLocalizedModel Name 값을 불러오지 못했습니다. (Language: {entry.Key})"
+                            Name = entry.Value ?? $"ProductLocalizedModel Name 값을 불러오지 못했습니다. (Language: {entry.Key})"
                         });
                     }
                 }
@@ -1347,7 +1476,7 @@ namespace Nop.Web.Areas.Admin.Controllers
 
         public async Task<string> DeppLTranslateTextAsync(string text, string sourceLanguage, string targetLanguage)
         {
-            var authKey = "f2fc50f9-4601-cfc5-9eec-576e8a73cf41:fx";  // DeepL의 Auth Key
+            var authKey = "67d0450a-748d-4bf2-d0ba-cf5dad9fa30f:fx";  // DeepL의 Auth Key
             System.Diagnostics.Debug.WriteLine($"Translating text: '{text}' from {sourceLanguage} to {targetLanguage}");
 
             var translator = new Translator(authKey);
@@ -1358,6 +1487,209 @@ namespace Nop.Web.Areas.Admin.Controllers
 
             System.Diagnostics.Debug.WriteLine($"Translated text: '{translatedText.Text}'");
             return translatedText.Text;
+        }
+
+        #endregion
+
+        #region ApiJd
+
+        public async Task<List<ProductInfo>> GetProductsFromJdAsync(
+            string categoryName,
+            bool hasDiscount = true,
+            bool inStock = true,
+            int page = 1,
+            int size = 200,
+            string sort = "volume_desc",
+            int minVendorRating = 3,
+            int maxVendorRating = 5,
+            string queryLanguage = "en",
+            string targetLanguage = "en")
+        {
+            const string API_KEY = "e9e7dd9c85msh4c01ab54707ebc8p120a38jsn0ab00d00a6cf";
+            const string API_HOST = "jingdong-Jing-Dong-data-service.p.rapidapi.com";
+
+            var maxRetryCount = 3; // 최대 재시도 횟수
+            var retryCount = 0;
+
+            while (retryCount < maxRetryCount)
+            {
+                try
+                {
+                    var client = new RestClient("https://jingdong-jing-dong-data-service.p.rapidapi.com/search/searchItems");
+                    var request = new RestRequest(Method.GET);
+
+                    request.AddQueryParameter("query", categoryName);
+                    request.AddQueryParameter("hasDiscount", hasDiscount.ToString());
+                    request.AddQueryParameter("inStock", inStock.ToString());
+                    request.AddQueryParameter("page", page.ToString());
+                    request.AddQueryParameter("size", size.ToString());
+                    request.AddQueryParameter("sort", sort);
+                    request.AddQueryParameter("minVendorRating", minVendorRating.ToString());
+                    request.AddQueryParameter("maxVendorRating", maxVendorRating.ToString());
+                    request.AddQueryParameter("query_language", queryLanguage);
+                    request.AddQueryParameter("target_language", targetLanguage);
+
+                    request.AddHeader("X-RapidAPI-Key", API_KEY);
+                    request.AddHeader("X-RapidAPI-Host", API_HOST);
+
+                    IRestResponse response = await client.ExecuteAsync(request);
+
+                    if (response.StatusCode != HttpStatusCode.OK)
+                    {
+                        throw new Exception($"API call failed with status code: {response.StatusCode}");
+                    }
+
+                    var productDataList = JsonConvert.DeserializeObject<dynamic>(response.Content);
+                    var productList = new List<ProductInfo>();
+
+                    if (productDataList != null && productDataList.items != null)
+                    {
+                        foreach (var productData in productDataList.items)
+                        {
+                            var url = productData.detail_url.ToString();
+                            var title = productData.title.ToString();
+                            var originalTitle = productData.original_title.ToString();
+                            var category_id = productData.category_id.ToString();
+                            var id = productData.num_iid.ToString();
+
+                            productList.Add(new ProductInfo { Url = url, Title = title, OriginalTitle = originalTitle, Id = id });
+                        }
+                    }
+                    else
+                    {
+                        throw new Exception("The response from the API was not as expected.");
+                    }
+
+                    return productList;
+                }
+                catch (Exception ex)
+                {
+                    retryCount++;
+
+                    if (retryCount >= maxRetryCount)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"GetProductsFromJdAsync Error Text: '{ex.Message}'");
+                        return null;
+                    }
+
+                    await Task.Delay(1000 * retryCount);
+                }
+            }
+
+            return null;
+        }
+
+
+        public async Task<TaobaoProductInfo> GetProductFromJdAsync(string productId)
+        {
+            var maxRetryCount = 3; // 최대 재시도 횟수
+            var retryCount = 0;
+            while (retryCount < maxRetryCount)
+            {
+                try
+                {
+                    System.Diagnostics.Debug.WriteLine($"productId text: '{productId}'");
+
+                    var client = new HttpClient();
+                    var request = new HttpRequestMessage(HttpMethod.Get, $"https://jingdong-jing-dong-data-service.p.rapidapi.com/item/itemFullInfo?itemId={productId}");
+                    request.Headers.Add("X-RapidAPI-Key", "e9e7dd9c85msh4c01ab54707ebc8p120a38jsn0ab00d00a6cf");
+                    request.Headers.Add("X-RapidAPI-Host", "jingdong-Jing-Dong-data-service.p.rapidapi.com");
+                    var response = await client.SendAsync(request);
+                    response.EnsureSuccessStatusCode();
+
+                    var responseContent = await response.Content.ReadAsStringAsync();
+                    var data = JObject.Parse(responseContent);
+
+                    var productInfo = new TaobaoProductInfo
+                    {
+                        CatId = data.ContainsKey("cat_id") ? data["cat_id"].ToString() : string.Empty,
+                        CreatedTime = data.ContainsKey("created_time") ? data["created_time"].ToString() : string.Empty,
+                        Description = data.ContainsKey("description") ? new Description
+                        {
+                            Html = data["description"]["html"]?.ToString(),
+                            Images = data["description"]["images"]?.ToObject<List<string>>()
+                        } : null,
+                        DetailUrl = data.ContainsKey("detail_url") ? data["detail_url"].ToString() : string.Empty,
+                        IsTmall = data.ContainsKey("isTmall") ? data["isTmall"].ToObject<bool>() : false,
+                        ItemImgs = data.ContainsKey("item_imgs") ? data["item_imgs"].ToObject<List<ImageObject>>() : new List<ImageObject>(),
+                        NumIid = data.ContainsKey("num_iid") ? data["num_iid"].ToString() : string.Empty,
+                        OriginalPrice = data.ContainsKey("original_price") ? Convert.ToDecimal(data["original_price"].ToString()) : 0m,
+                        OriginalTitle = data.ContainsKey("original_title") ? data["original_title"].ToString() : string.Empty,
+                        PicUrl = data.ContainsKey("pic_url") ? data["pic_url"].ToString() : string.Empty,
+                        Price = data.ContainsKey("price") ? Convert.ToDecimal(data["price"].ToString()) : 0m,
+                        Props = data.ContainsKey("props") ? data["props"].ToObject<List<Props>>() : new List<Props>(),
+                        Title = data.ContainsKey("title") ? data["title"].ToString() : string.Empty,
+                    };
+
+                    if (data["skus"] is JArray skusArray)
+                    {
+                        productInfo.Skus = new List<SkuInfo>();
+                        foreach (var skuItem in skusArray)
+                        {
+                            var skuInfo = new SkuInfo
+                            {
+                                SkuId = skuItem["sku_id"]?.ToString(),
+                                Price = skuItem["price"]?.ToString(),
+                                Quantity = skuItem["quantity"]?.ToString(),
+                            };
+
+                            var propValuesData = skuItem["properties_name"]?.ToString().Split(';');
+                            if (propValuesData != null)
+                            {
+                                skuInfo.PropValues = new List<PropValue>();
+                                foreach (var propValueData in propValuesData)
+                                {
+                                    var propIdValueName = propValueData.Split(':');
+                                    if (propIdValueName.Length == 4)
+                                    {
+                                        var propValue = new PropValue
+                                        {
+                                            PropId = propIdValueName[0],
+                                            ValueId = propIdValueName[1],
+                                            Name = propIdValueName[2],
+                                            Value = propIdValueName[3]
+                                        };
+                                        skuInfo.PropValues.Add(propValue);
+                                    }
+                                }
+                            }
+
+                            productInfo.Skus.Add(skuInfo);
+                        }
+                    }
+
+                    if (data.ContainsKey("props_imgs") && data["props_imgs"] is JArray propImagesData)
+                    {
+                        productInfo.PropImages = new List<PropImage>();
+                        foreach (var propImageItem in propImagesData)
+                        {
+                            var propImage = new PropImage
+                            {
+                                PropId = propImageItem["properties"].ToString().Split(':')[0],
+                                ValueId = propImageItem["properties"].ToString().Split(':')[1],
+                                Url = propImageItem["url"].ToString()
+                            };
+                            productInfo.PropImages.Add(propImage);
+                        }
+                    }
+
+                    return productInfo;
+                }
+                catch (Exception ex)
+                {
+                    retryCount++;
+                    System.Diagnostics.Debug.WriteLine($"GetProductFromTaobaoAsync Error Text: '{ex.Message.ToString()}'");
+                    if (retryCount >= maxRetryCount)
+                    {
+                        return null; // 재시도 횟수를 초과하면 null을 반환
+                    }
+
+                    // 잠시 대기 후 재시도
+                    await Task.Delay(1000 * retryCount);
+                }
+            }
+
+            return null; // 여기에 도달할 경우는 null을 반환
         }
 
         #endregion
@@ -1378,9 +1710,29 @@ namespace Nop.Web.Areas.Admin.Controllers
             public string OriginalTitle { get; set; }
             public string PicUrl { get; set; }
             public decimal Price { get; set; }
+            public List<SkuInfo> Skus { get; set; }
             public List<Props> Props { get; set; }
+            public List<PropImage> PropImages { get; set; }
             public List<SellerItem> SellerItems { get; set; }
             public string Title { get; set; }
+
+            public string Features { get; set; }
+            public List<string> ItemRecentReviews { get; set; }
+            public int ItemReviewsCount { get; set; }
+            public List<string> ItemVideos { get; set; }
+            public string ItemWeight { get; set; }
+            public string Location { get; set; }
+            public int Quantity { get; set; }
+            public bool SellPermitted { get; set; }
+            public SellerInfo SellerInfo { get; set; }
+            public string StuffStatus { get; set; }
+            public string UpdatedTime { get; set; }
+        }
+
+        public class SellerInfo
+        {
+            public string Name { get; set; }
+            public int Rating { get; set; }
         }
 
         public class Description
@@ -1403,15 +1755,50 @@ namespace Nop.Web.Areas.Admin.Controllers
             public int Width { get; set; }
         }
 
+        public class SkuInfo
+        {
+            public string SkuId { get; set; }
+            public string Price { get; set; }
+            public string Quantity { get; set; }
+            public List<PropValue> PropValues { get; set; } // 각 SKU의 속성 값을 저장
+        }
+
+        public class PropValue
+        {
+            public string PropId { get; set; }  // 상품 속성 ID
+            public string ValueId { get; set; } // 해당 속성의 값 ID
+            public string Name { get; set; }    // 속성 이름 (예: "색상")
+            public string Value { get; set; }   // 속성 값 (예: "파란색")
+        }
+
         public class Props
         {
+            [JsonProperty("is_configurator")]
             public bool IsConfigurator { get; set; }
+
+            [JsonProperty("original_property_name")]
             public string OriginalPropertyName { get; set; }
+
+            [JsonProperty("original_value")]
             public string OriginalValue { get; set; }
+
+            [JsonProperty("product_id")]
             public string ProductId { get; set; }
+
+            [JsonProperty("property_name")]
             public string PropertyName { get; set; }
+
             public string Value { get; set; }
+
+            [JsonProperty("variation_id")]
             public string VariationId { get; set; }
+        }
+
+        public class PropImage
+        {
+            public string PropId { get; set; }
+            public string ValueId { get; set; }
+            public string Url { get; set; }
         }
 
         public class SellerItem
@@ -1521,7 +1908,7 @@ namespace Nop.Web.Areas.Admin.Controllers
             string categoryName,
             int page = 1,
             int size = 200,
-            string sort = "updated_time_desc,vendor_rating_desc",
+            string sort = "volume_desc", // vendor_rating_desc, updated_time_desc, total_price_asc, total_price_desc, price_asc, price_desc, volume_desc
             int minSellerRating = 3,
             int maxSellerRating = 5,
             string queryLanguage = "en",
@@ -1535,7 +1922,7 @@ namespace Nop.Web.Areas.Admin.Controllers
                 try
                 {
                     var encodedCategoryName = categoryName.Replace(" ", "%20");
-                    var client = new RestClient($"https://taobao-tmall-tao-bao-data-service.p.rapidapi.com/search/searchItems?query={encodedCategoryName}&page={page}&size={size}&target_language={targetLanguage}&query_language={queryLanguage}");
+                    var client = new RestClient($"https://taobao-tmall-tao-bao-data-service.p.rapidapi.com/search/searchItems?query={encodedCategoryName}&page={page}&size={size}&sort={sort}&target_language={targetLanguage}&query_language={queryLanguage}");
 
                     var request = new RestRequest(Method.GET);
                     request.AddHeader("X-RapidAPI-Key", "e9e7dd9c85msh4c01ab54707ebc8p120a38jsn0ab00d00a6cf");
@@ -1574,7 +1961,7 @@ namespace Nop.Web.Areas.Admin.Controllers
 
                     if (retryCount >= maxRetryCount)
                     {
-                        System.Diagnostics.Debug.WriteLine($"GetcategoryNameProductsFromTaobaoAsync Error Text: '{ex.Message.ToString()}'");
+                        System.Diagnostics.Debug.WriteLine($"GetcategoryNameProductsFromTaobaoAsync Error Text: '{ex.Message}'");
                         return null; // 재시도 횟수를 초과하면 null을 반환
                     }
 
@@ -1623,18 +2010,69 @@ namespace Nop.Web.Areas.Admin.Controllers
                         PicUrl = data.ContainsKey("pic_url") ? data["pic_url"].ToString() : string.Empty,
                         Price = data.ContainsKey("price") ? Convert.ToDecimal(data["price"].ToString()) : 0m,
                         Props = data.ContainsKey("props") ? data["props"].ToObject<List<Props>>() : new List<Props>(),
-                        Title = data.ContainsKey("title") ? data["title"].ToString() : string.Empty
+                        Title = data.ContainsKey("title") ? data["title"].ToString() : string.Empty,
                     };
+
+                    if (data["skus"] is JArray skusArray)
+                    {
+                        productInfo.Skus = new List<SkuInfo>();
+                        foreach (var skuItem in skusArray)
+                        {
+                            var skuInfo = new SkuInfo
+                            {
+                                SkuId = skuItem["sku_id"]?.ToString(),
+                                Price = skuItem["price"]?.ToString(),
+                                Quantity = skuItem["quantity"]?.ToString(),
+                            };
+
+                            var propValuesData = skuItem["properties_name"]?.ToString().Split(';');
+                            if (propValuesData != null)
+                            {
+                                skuInfo.PropValues = new List<PropValue>();
+                                foreach (var propValueData in propValuesData)
+                                {
+                                    var propIdValueName = propValueData.Split(':');
+                                    if (propIdValueName.Length == 4)
+                                    {
+                                        var propValue = new PropValue
+                                        {
+                                            PropId = propIdValueName[0],
+                                            ValueId = propIdValueName[1],
+                                            Name = propIdValueName[2],
+                                            Value = propIdValueName[3]
+                                        };
+                                        skuInfo.PropValues.Add(propValue);
+                                    }
+                                }
+                            }
+
+                            productInfo.Skus.Add(skuInfo);
+                        }
+                    }
+
+                    if (data.ContainsKey("props_imgs") && data["props_imgs"] is JArray propImagesData)
+                    {
+                        productInfo.PropImages = new List<PropImage>();
+                        foreach (var propImageItem in propImagesData)
+                        {
+                            var propImage = new PropImage
+                            {
+                                PropId = propImageItem["properties"].ToString().Split(':')[0],
+                                ValueId = propImageItem["properties"].ToString().Split(':')[1],
+                                Url = propImageItem["url"].ToString()
+                            };
+                            productInfo.PropImages.Add(propImage);
+                        }
+                    }
 
                     return productInfo;
                 }
                 catch (Exception ex)
                 {
                     retryCount++;
-
+                    System.Diagnostics.Debug.WriteLine($"GetProductFromTaobaoAsync Error Text: '{ex.Message.ToString()}'");
                     if (retryCount >= maxRetryCount)
                     {
-                        System.Diagnostics.Debug.WriteLine($"GetProductFromTaobaoAsync Error Text: '{ex.Message.ToString()}'");
                         return null; // 재시도 횟수를 초과하면 null을 반환
                     }
 
@@ -1662,6 +2100,9 @@ namespace Nop.Web.Areas.Admin.Controllers
 
         public virtual async Task<IActionResult> ApiCreate(bool continueEditing = false)
         {
+            // 현재 날짜를 yyyyMMdd 형식으로 가져옴.
+            var today = DateTime.Now.ToString("yyyyMMdd");
+
             // 카테고리 작업 소요시간 시작
             var swCategories = Stopwatch.StartNew();
             swCategories.Start();
@@ -1683,14 +2124,18 @@ namespace Nop.Web.Areas.Admin.Controllers
 
             foreach (var subCategory in subCategories)
             {
-                // 각 하위 카테고리에 속한 상품 가져오기
-                var productsInSubCategory = await _categoryService.GetProductCategoriesByCategoryIdAsync(subCategory.Id);
-
-                if (!productsInSubCategory.Any())
+                if (subCategory.Name != today)
                 {
-                    // 하위 카테고리에 속한 상품이 없는 경우, 해당 카테고리 삭제
-                    await _categoryService.DeleteCategoryAsync(subCategory);
+                    // 각 하위 카테고리에 속한 상품 가져오기
+                    var productsInSubCategory = await _categoryService.GetProductCategoriesByCategoryIdAsync(subCategory.Id);
+
+                    if (!productsInSubCategory.Any())
+                    {
+                        // 하위 카테고리에 속한 상품이 없는 경우, 해당 카테고리 삭제
+                        await _categoryService.DeleteCategoryAsync(subCategory);
+                    }
                 }
+   
             }
 
             #endregion
@@ -1698,9 +2143,6 @@ namespace Nop.Web.Areas.Admin.Controllers
             #region Create or use category
 
             int categoryId;
-
-            // 현재 날짜를 yyyyMMdd 형식으로 가져옴.
-            var today = DateTime.Now.ToString("yyyyMMdd");
 
             // 하위 카테고리에서 현재 날짜와 같은 이름의 카테고리를 찾기
             var todayCategory = subCategories.FirstOrDefault(cat => cat.Name == today);
@@ -1759,7 +2201,7 @@ namespace Nop.Web.Areas.Admin.Controllers
             foreach (var category in categories)
             {
                 var parentCategory = await _categoryService.GetCategoryByIdAsync(category.ParentCategoryId);
-                if (parentCategory == null || int.TryParse(parentCategory.Name, out _))
+                if (parentCategory == null || int.TryParse(parentCategory.Name, out _) || parentCategory.Name == "미분류 카테고리")
                 {
                     continue;
                 }
@@ -1818,6 +2260,35 @@ namespace Nop.Web.Areas.Admin.Controllers
                 }
             }
 
+            if (categorizedCategories.Count < 1)
+            {
+                foreach (var category in categories)
+                {
+                    if (category.ParentCategoryId == 0)
+                    {
+                        continue;
+                    }
+
+                    var localizedName = await _localizedEntityService.GetLocalizedValueAsync(languageId, category.Id, "Category", "Name");
+
+                    var categorizedCategory = new CategorizedCategory
+                    {
+                        ParentName = localizedName,
+                        SecondCategoryId = category.Id,
+                        Children = new List<CategoryWithTranslation>
+                                {
+                                    new CategoryWithTranslation
+                                    {
+                                        CategoryData = category,
+                                        TranslatedName = localizedName
+                                    }
+                                }
+                    };
+
+                    categorizedCategories.Add(categorizedCategory);
+                }
+            }
+
             #endregion
 
 
@@ -1827,9 +2298,18 @@ namespace Nop.Web.Areas.Admin.Controllers
             var elapsedTime = $"{ts.Hours:00}:{ts.Minutes:00}:{ts.Seconds:00}.{ts.Milliseconds:000}";
             System.Diagnostics.Debug.WriteLine($"swCategories : '{elapsedTime}'");
 
-            categorizedCategories.Reverse();
+            var randomizedCategories = new List<CategorizedCategory>();
+            var random = new Random();
 
-            foreach (var categorizedCategory in categorizedCategories)
+            while (categorizedCategories.Count > 0)
+            {
+                var index = random.Next(categorizedCategories.Count); // 랜덤한 인덱스 선택
+                var category = categorizedCategories[index];
+                randomizedCategories.Add(category);
+                categorizedCategories.RemoveAt(index);
+            }
+
+            foreach (var categorizedCategory in randomizedCategories)
             {
                 var parentName = categorizedCategory.ParentName;
                 foreach (var childCategory in categorizedCategory.Children)
@@ -1838,7 +2318,11 @@ namespace Nop.Web.Areas.Admin.Controllers
                                       ? childCategory.TranslatedName
                                       : $"{parentName} {childCategory.TranslatedName}";
                     System.Diagnostics.Debug.WriteLine($"GetcategoryNameProductsFromTaobaoAsync : '{searchQuery}'");
-                    var nameProductInfoList = await GetcategoryNameProductsFromTaobaoAsync(searchQuery, size: 5);
+
+                    // 2023.10.18 상품정보 JD사이트로 변경
+                    // var nameProductInfoList = await GetcategoryNameProductsFromTaobaoAsync(searchQuery, size: 1);
+
+                    var nameProductInfoList = await GetProductsFromJdAsync(searchQuery, size: 5);
 
                     if (nameProductInfoList == null)
                     {
@@ -1852,6 +2336,7 @@ namespace Nop.Web.Areas.Admin.Controllers
                         var productBySku = await _productService.GetProductBySkuAsync(productUrl);
                         if (productBySku != null)
                         {
+                            // 동일 SKU일경우 저장하지않는다.
                             System.Diagnostics.Debug.WriteLine($"Skip the product : '{productUrl}'");
                             continue;
                         }
@@ -1859,9 +2344,12 @@ namespace Nop.Web.Areas.Admin.Controllers
                         var productTitle = productInfo.Title;
                         var productOriginalTitle = productInfo.OriginalTitle;
                         var translatedValue = await DeppLTranslateTextAsync(productOriginalTitle, LanguageCode.Chinese, LanguageCode.Korean);
-                        var productData = await GetProductFromTaobaoAsync(productId);
+
+                        // var productData = await GetProductFromTaobaoAsync(productId);
+                        var productData = await GetProductFromJdAsync(productId);
                         if (productData == null)
                         {
+                            // 상품정보가 API에 없으면 건너뛴다
                             continue;
                         }
 
@@ -1877,6 +2365,9 @@ namespace Nop.Web.Areas.Admin.Controllers
                             Sku = string.IsNullOrEmpty(productUrl) ? "Sku 값을 불러오지못했습니다." : productUrl,
                             AvailableStartDateTimeUtc = DateTime.UtcNow,
                             Published = true,
+                            ProductTypeId = 5,
+                            BasepriceUnitId = 3,
+                            BasepriceBaseUnitId = 3,
                             VisibleIndividually = true,
                             SelectedCategoryIds = new List<int>
                             {
@@ -1972,6 +2463,9 @@ namespace Nop.Web.Areas.Admin.Controllers
                                     DisplayOrder = i
                                 });
                             }
+
+                            // 상품 특성 매핑 메서드 호출
+                            // await MapTaobaoProductAttributesAsync(product.Id, productData);
 
                             model.SeName = await _urlRecordService.ValidateSeNameAsync(product, model.SeName, product.Name, true);
                             await _urlRecordService.SaveSlugAsync(product, model.SeName, 0);
@@ -2152,6 +2646,83 @@ namespace Nop.Web.Areas.Admin.Controllers
             //prepare model
             model = await _productModelFactory.PrepareProductModelAsync(model, product, true);
         }
+
+        public async Task MapTaobaoProductAttributesAsync(int productId, TaobaoProductInfo taobaoProduct)
+        {
+            // 타오바오 상품의 특성 정보 파악
+            var propsFromTaobao = taobaoProduct.Props;
+
+            foreach (var prop in propsFromTaobao)
+            {
+                // 해당 특성이 nopCommerce 데이터베이스에 이미 번역된 이름으로 존재하는지 확인하고, 존재한다면 해당 특성의 ID를 가져옴
+                int? existingAttributeId = await _localizedEntityService.GetEntityIdByLocalizedNameAsync("ProductAttribute", "Name", prop.PropertyName);
+
+                ProductAttribute existingAttribute = null;
+
+                if (!existingAttributeId.HasValue)
+                {
+                    // 데이터베이스에 존재하지 않는 경우, 새로운 특성 추가
+                    var newAttribute = new ProductAttribute
+                    {
+                        Name = prop.PropertyName,
+                        Description = prop.OriginalPropertyName // 원래의 속성 이름을 설명으로 사용
+                    };
+
+                    // Assuming you have a method to convert the newAttribute to a model
+                    var model = ConvertToProductAttributeModel(newAttribute);
+
+                    await _productAttributeService.InsertProductAttributeAsync(newAttribute);
+
+                    // Assuming you have all necessary parameters for UpdateLocalesAsync
+                    await UpdateLocalesAsync(newAttribute, model);
+
+                    //activity log
+                    await _customerActivityService.InsertActivityAsync("AddNewProductAttribute",
+                        string.Format(await _localizationService.GetResourceAsync("ActivityLog.AddNewProductAttribute"), newAttribute.Name), newAttribute);
+
+                    _notificationService.SuccessNotification(await _localizationService.GetResourceAsync("Admin.Catalog.Attributes.ProductAttributes.Added"));
+                    existingAttribute = newAttribute;
+                }
+                else
+                {
+                    // 만약 존재한다면, 해당 특성을 검색하여 existingAttribute를 설정
+                    existingAttribute = await _productAttributeService.GetProductAttributeByIdAsync(existingAttributeId.Value);
+                }
+
+                // 해당 특성이 이미 상품에 매핑되어 있는지 확인
+                if ((await _productAttributeService.GetProductAttributeMappingsByProductIdAsync(productId))
+                    .Any(x => x.ProductAttributeId == existingAttribute.Id))
+                {
+                    continue; // 특성이 이미 매핑되어 있다면 다음으로 넘어감
+                }
+
+                // 상품을 특성에 매핑
+                var productAttributeMapping = new ProductAttributeMapping
+                {
+                    ProductId = productId,
+                    ProductAttributeId = existingAttribute.Id
+                };
+
+                await _productAttributeService.InsertProductAttributeMappingAsync(productAttributeMapping);
+            }
+        }
+
+        public ProductAttributeModel ConvertToProductAttributeModel(ProductAttribute productAttribute)
+        {
+            if (productAttribute == null)
+                throw new ArgumentNullException(nameof(productAttribute));
+
+            var model = new ProductAttributeModel
+            {
+                Id = productAttribute.Id,
+                Name = productAttribute.Name,
+                Description = productAttribute.Description,
+                Locales = new List<ProductAttributeLocalizedModel>() // 추가적인 로컬라이제이션 정보가 필요한 경우 여기에 추가
+            };
+
+            return model;
+        }
+
 
         [HttpPost, ParameterBasedOnFormName("save-api", "callApi")]
         public virtual async Task<IActionResult> ApiCreate(string query, bool continueEditing = false)
@@ -2505,6 +3076,7 @@ namespace Nop.Web.Areas.Admin.Controllers
         {
             switch (detectedLanguage)
             {
+                case "en":
                 case "en-US":
                     return 1; // 영어
                 case "ko":
