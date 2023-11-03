@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc.Rendering;
+using Nop.Core;
 using Nop.Core.Domain.Catalog;
 using Nop.Core.Domain.Directory;
 using Nop.Core.Domain.Discounts;
@@ -39,6 +40,8 @@ namespace Nop.Web.Areas.Admin.Factories
         private readonly IProductService _productService;
         private readonly IStoreMappingSupportedModelFactory _storeMappingSupportedModelFactory;
         private readonly IUrlRecordService _urlRecordService;
+        private readonly IWorkContext _workContext;
+        private readonly ILocalizedEntityService _localizedEntityService;
 
         #endregion
 
@@ -56,7 +59,9 @@ namespace Nop.Web.Areas.Admin.Factories
             ILocalizedModelFactory localizedModelFactory,
             IProductService productService,
             IStoreMappingSupportedModelFactory storeMappingSupportedModelFactory,
-            IUrlRecordService urlRecordService)
+            IUrlRecordService urlRecordService,
+            IWorkContext workContext,
+            ILocalizedEntityService localizedEntityService)
         {
             _catalogSettings = catalogSettings;
             _currencySettings = currencySettings;
@@ -71,6 +76,8 @@ namespace Nop.Web.Areas.Admin.Factories
             _productService = productService;
             _storeMappingSupportedModelFactory = storeMappingSupportedModelFactory;
             _urlRecordService = urlRecordService;
+            _workContext = workContext;
+            _localizedEntityService = localizedEntityService;
         }
 
         #endregion
@@ -168,8 +175,14 @@ namespace Nop.Web.Areas.Admin.Factories
             {
                 return categories.SelectAwait(async category =>
                 {
+                    // Get current language of the admin
+                    var currentLanguage = await _workContext.GetWorkingLanguageAsync();
+
                     //fill in model values from the entity
                     var categoryModel = category.ToModel<CategoryModel>();
+
+                    // Localize product name based on admin's current language
+                    categoryModel.Name = await _localizedEntityService.GetLocalizedValueAsync(currentLanguage.Id, category.Id, "Category", "Name");
 
                     //fill in additional values (not existing in the entity)
                     categoryModel.Breadcrumb = await _categoryService.GetFormattedBreadCrumbAsync(category);

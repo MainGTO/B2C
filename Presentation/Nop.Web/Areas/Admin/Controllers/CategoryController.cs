@@ -33,6 +33,15 @@ using Nop.Web.Framework.Controllers;
 using Nop.Web.Framework.Mvc;
 using Nop.Web.Framework.Mvc.Filters;
 using DeepL;
+using System.Text.RegularExpressions;
+using OpenQA.Selenium;
+using OpenQA.Selenium.Chrome;
+using HtmlAgilityPack;
+using OpenQA.Selenium.Support.UI;
+using SeleniumExtras.WaitHelpers;
+using System.IO;
+using DocumentFormat.OpenXml.Bibliography;
+using OpenQA.Selenium.Interactions;
 
 namespace Nop.Web.Areas.Admin.Controllers
 {
@@ -118,8 +127,8 @@ namespace Nop.Web.Areas.Admin.Controllers
         {
             System.Diagnostics.Debug.WriteLine($"Translating text: '{text}' from {sourceLanguage} to {targetLanguage}");
 
-            var authKey = "f2fc50f9-4601-cfc5-9eec-576e8a73cf41:fx";  // DeepL의 Auth Key
-            var translator = new Translator(authKey);
+            var authKey = "67d0450a-748d-4bf2-d0ba-cf5dad9fa30f:fx";  // DeepL의 Auth Key
+            var translator = new DeepL.Translator(authKey);
             var translatedText = await translator.TranslateTextAsync(
                   text,
                   sourceLanguage,
@@ -135,6 +144,8 @@ namespace Nop.Web.Areas.Admin.Controllers
 
         protected virtual async Task UpdateLocalesAsync(Category category, CategoryModel model , bool api = false)
         {
+            model.Locales = model.Locales.Where(x => !string.IsNullOrEmpty(x.Name)).ToList();
+
             // 번역이 필요한 언어 ID 목록을 확인
             var requiredLanguages = new List<int> { 1, 2, 3 }; // 1: 영어, 2: 한국어, 3: 중국어 
 
@@ -881,7 +892,7 @@ namespace Nop.Web.Areas.Admin.Controllers
                 .ToList();
 
             // 전역 변수로 부모 카테고리의 디스플레이 오더 관리
-            var parentDisplayOrder = 48;
+            var parentDisplayOrder = 0;
 
             // 누락된 부모 카테고리 처리
             foreach (var parentCategory in missingCategories)
@@ -896,6 +907,562 @@ namespace Nop.Web.Areas.Admin.Controllers
 
             return RedirectToAction("List");
         }
+
+        #region Temu Api
+
+        public class TemuCategory
+        {
+            public int OptId { get; set; }
+            public string OptName { get; set; }
+            public string LinkUrl { get; set; }
+            public string SeoLinkUrl { get; set; }
+            public string ImageUrl { get; set; }
+            public int ParentOptId { get; set; } // 부모 카테고리 ID
+            public int DisplayOrder { get; set; } // displayOrder 추가
+        }
+
+        private List<TemuCategory> ExtractCategories(string html)
+        {
+            string objectPattern = @"\{[^}]+\}";
+            Regex objectRegex = new Regex(objectPattern, RegexOptions.Singleline);
+
+            MatchCollection matches = objectRegex.Matches(html);
+            List<TemuCategory> categories = new List<TemuCategory>();
+            int displayOrderCounter = 1;
+
+            foreach (Match match in matches)
+            {
+                var optIdMatch = Regex.Match(match.Value, @"""optId"":(\d+)");
+                var optNameMatch = Regex.Match(match.Value, @"""optName"":""([^""]+)""");
+                var linkUrlMatch = Regex.Match(match.Value, @"""linkUrl"":""([^""]+)""");
+                var seoLinkUrlMatch = Regex.Match(match.Value, @"""seoLinkUrl"":""([^""]+)""");
+                var imageUrlMatch = Regex.Match(match.Value, @"""imageUrl"":""([^""]+)""");
+
+                categories.Add(new TemuCategory
+                {
+                    OptId = optIdMatch.Success ? int.Parse(optIdMatch.Groups[1].Value) : 0,
+                    OptName = optNameMatch.Groups[1].Value,
+                    LinkUrl = linkUrlMatch.Groups[1].Value,
+                    SeoLinkUrl = seoLinkUrlMatch.Groups[1].Value,
+                    ImageUrl = imageUrlMatch.Groups[1].Value,
+                    DisplayOrder = displayOrderCounter++
+                });
+            }
+
+            var filteredCategories = categories
+                .Where(c => c.OptId != 0) // 예: OptId가 0이 아닌 경우만 포함
+                .Select(c => new TemuCategory
+                {
+                    OptId = c.OptId,
+                    OptName = c.OptName,
+                    LinkUrl = c.LinkUrl,
+                    SeoLinkUrl = c.SeoLinkUrl,
+                    ImageUrl = c.ImageUrl,
+                    DisplayOrder = c.DisplayOrder
+                }); // 필요한 필드만 선택하되, 여전히 TemuCategory 타입을 유지
+
+            // 필터링된 카테고리 리스트를 반환
+            return filteredCategories.ToList();
+        }
+
+        public async Task<IActionResult> ApiJdCategoryGetAndInsert()
+        {
+            return null;
+        }
+
+
+        private const string BASE_TEMU_URL = "https://www.temu.com";
+
+        public async Task<IActionResult> ApiTemuCategoryGetAndInsert()
+        {
+            var chromeOptions = new ChromeOptions();
+            ConfigureBrowserOptions(chromeOptions);
+
+            using (IWebDriver driver = new ChromeDriver(chromeOptions))
+            {
+                RemoveWebDriverAttribute(driver);
+                NavigateToGoogle(driver);
+                await NavigateAndLoginIfNeeded(driver, BASE_TEMU_URL);
+
+                var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
+
+                // 로그인 버튼 클릭
+                var loginButton = wait.Until(ExpectedConditions.ElementToBeClickable(By.XPath("//*[@id=\"mainHeader\"]/div/div/div[2]/div/div[5]/div[1]")));
+                ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].click();", loginButton);
+                System.Threading.Thread.Sleep(TimeSpan.FromSeconds(3));
+
+                // 이메일 입력
+                var emailField = wait.Until(ExpectedConditions.ElementToBeClickable(By.XPath("//*[@id=\"user-account\"]")));
+                emailField.SendKeys("grere19");
+                System.Threading.Thread.Sleep(TimeSpan.FromSeconds(7));
+
+                // 이메일 제출 버튼 클릭
+                var submitEmailButton = wait.Until(ExpectedConditions.ElementToBeClickable(By.XPath("//*[@id='submit-button']")));
+                ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].click();", submitEmailButton);
+                // submitEmailButton.Click();
+                System.Threading.Thread.Sleep(TimeSpan.FromSeconds(5));
+
+                // 비밀번호 입력
+                var passwordField = wait.Until(ExpectedConditions.ElementToBeClickable(By.XPath("//*[@id='pwdInputInLoginDialog']")));
+                passwordField.SendKeys("1937reRe!!!");
+                System.Threading.Thread.Sleep(TimeSpan.FromSeconds(5));
+
+                // 로그인 버튼 클릭
+                var loginButtonOk = wait.Until(ExpectedConditions.ElementToBeClickable(By.XPath("//*[@id='submit-button']")));
+                ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].click();", loginButtonOk);
+                System.Threading.Thread.Sleep(TimeSpan.FromSeconds(5));
+
+
+                #region TemuCategory_Get_Insert
+
+                List<TemuCategory> topCategories = ExtractCategories(driver.PageSource);
+                List<TemuCategory> allCategories = new List<TemuCategory>(topCategories);
+
+                int displayOrderCounter = 1;
+
+                foreach (var topCategory in topCategories)
+                {
+                    topCategory.DisplayOrder = displayOrderCounter++;
+
+                    var subCategories = await TemuExtractSubCategories(topCategory, driver);
+
+                    if (IsLoginPage(driver))
+                    {
+                        await InformUserAndAwaitLogin(driver);
+                        subCategories = await TemuExtractSubCategories(topCategory, driver);
+                    }
+
+                    allCategories.AddRange(subCategories);
+                }
+
+                var sortedCategories = allCategories
+                    .Where(c => c.ParentOptId == 0)  // 부모 카테고리 선택
+                    .OrderBy(c => c.DisplayOrder)    // 부모 카테고리를 DisplayOrder로 정렬
+                    .SelectMany(parentCategory => new[] { parentCategory }
+                        .Concat(allCategories
+                            .Where(subCategory => subCategory.ParentOptId == parentCategory.OptId)  // 해당 부모에 속하는 하위 카테고리 선택
+                            .OrderBy(subCategory => subCategory.DisplayOrder)))  // 하위 카테고리를 DisplayOrder로 정렬
+                    .ToList();
+
+                foreach (var temuCategory in sortedCategories)
+                {
+                    var existingCategories = await _categoryService.GetAllCategoriesAsync(temuCategory.OptName, showHidden: true);
+
+                    if (!existingCategories.Any())
+                    {
+                        var categoryModel = await ConvertToCategoryModel(temuCategory);
+                        await ProcessCategoryAsync(categoryModel);
+                    }
+                    else
+                    {
+                        var existingCategory = existingCategories.FirstOrDefault(c => c.Name == temuCategory.OptName);
+                        if (existingCategory != null)
+                        {
+                            // 이미지가 없으며, temuCategory.ImageUrl이 유효한 경우만 이미지를 다시 다운로드
+                            if (existingCategory.PictureId == 0 && !string.IsNullOrEmpty(temuCategory.ImageUrl))
+                            {
+                                var newPictureId = await DownloadAndSetPictureId(temuCategory.ImageUrl);
+
+                                if (newPictureId != 0)
+                                {
+                                    existingCategory.PictureId = newPictureId;
+                                    await _categoryService.UpdateCategoryAsync(existingCategory); // 카테고리 업데이트 메서드 호출하여 변경 사항 저장
+                                }
+                            }
+                        }
+                    }
+                }
+
+                #endregion
+
+                return Json(allCategories);
+            }
+        }
+
+        public async Task<IActionResult> ApiTemuGetProducts()
+        {
+            var chromeOptions = new ChromeOptions();
+            ConfigureBrowserOptions(chromeOptions);
+
+            using IWebDriver driver = new ChromeDriver(chromeOptions);
+            RemoveWebDriverAttribute(driver);
+            NavigateToGoogle(driver);
+            await NavigateAndLoginIfNeeded(driver, BASE_TEMU_URL);
+
+            var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
+
+            // 로그인 버튼 클릭
+            var loginButton = wait.Until(ExpectedConditions.ElementToBeClickable(By.XPath("//*[@id=\"mainHeader\"]/div/div/div[2]/div/div[5]/div[1]")));
+            ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].click();", loginButton);
+            System.Threading.Thread.Sleep(TimeSpan.FromSeconds(3));
+
+            // 이메일 입력
+            var emailField = wait.Until(ExpectedConditions.ElementToBeClickable(By.XPath("//*[@id=\"user-account\"]")));
+            emailField.SendKeys("maingto@gmail.com");
+            System.Threading.Thread.Sleep(TimeSpan.FromSeconds(7));
+
+            // 이메일 제출 버튼 클릭
+            var submitEmailButton = wait.Until(ExpectedConditions.ElementToBeClickable(By.XPath("//*[@id='submit-button']")));
+            ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].click();", submitEmailButton);
+            // submitEmailButton.Click();
+            System.Threading.Thread.Sleep(TimeSpan.FromSeconds(5));
+
+            // 비밀번호 입력
+            var passwordField = wait.Until(ExpectedConditions.ElementToBeClickable(By.XPath("//*[@id='pwdInputInLoginDialog']")));
+            passwordField.SendKeys("1937reRe!!!");
+            System.Threading.Thread.Sleep(TimeSpan.FromSeconds(5));
+
+            // 로그인 버튼 클릭
+            var loginButtonOk = wait.Until(ExpectedConditions.ElementToBeClickable(By.XPath("//*[@id='submit-button']")));
+            ((IJavaScriptExecutor)driver).ExecuteScript("arguments[0].click();", loginButtonOk);
+            System.Threading.Thread.Sleep(TimeSpan.FromSeconds(5));
+
+
+            #region TemuCategory_Get_Insert
+
+            var topCategories = ExtractCategories(driver.PageSource);
+
+
+            var displayOrderCounter = 1;
+
+            // 실패한 서브 카테고리의 정보를 저장할 리스트를 정의합니다.
+            var failedSubCategories = new List<dynamic>();
+
+            foreach (var topCategory in topCategories)
+            {
+                topCategory.DisplayOrder = displayOrderCounter++;
+
+                var subCategories = await TemuExtractSubCategories(topCategory, driver);
+
+                if (IsLoginPage(driver))
+                {
+                    await InformUserAndAwaitLogin(driver);
+                    subCategories = await TemuExtractSubCategories(topCategory, driver);
+                }
+
+                // 각 서브 카테고리로 이동
+                foreach (var subCategory in subCategories)
+                {
+                    NavigateToSubCategory(driver, subCategory.LinkUrl, out dynamic subCategoryResponse);
+
+                    if (!subCategoryResponse.success)
+                    {
+                        // 실패한 서브 카테고리 정보를 리스트에 추가합니다.
+                        failedSubCategories.Add(new
+                        {
+                            name = subCategory.OptName,
+                            errorMessage = subCategoryResponse.message
+                        });
+                        continue; // 다음 서브 카테고리로 계속 진행합니다.
+                    }
+
+                    // TODO: 서브 카테고리 페이지에서 필요한 작업을 추가합니다.
+                }
+            }
+
+            var response = new
+            {
+                success = failedSubCategories.Count == 0, // 실패한 서브 카테고리가 없으면 true, 있으면 false
+                message = failedSubCategories.Count == 0 ? "성공적으로 처리되었습니다." : "일부 서브 카테고리에서 문제가 발생했습니다.",
+                failedCategories = failedSubCategories // 실패한 서브 카테고리 정보
+            };
+
+            return new JsonResult(response);
+
+            #endregion
+        }
+
+        public void NavigateToSubCategory(IWebDriver driver, string subCategoryUrlOrXPath, out dynamic response)
+        {
+            response = new { success = true, message = "성공적으로 처리되었습니다." };
+
+            var url = BASE_TEMU_URL + "/kr";
+            var subUrl = subCategoryUrlOrXPath.Replace(@"\u002F", "/");
+
+            try
+            {
+                // 서브카테고리 페이지로 이동
+                driver.Navigate().GoToUrl(url + subUrl);
+
+                // 페이지 로딩을 기다립니다.
+                System.Threading.Thread.Sleep(TimeSpan.FromSeconds(5));
+
+                // 만약 새 창에서 페이지가 열렸다면, 그 창으로 컨텍스트를 전환합니다.
+                if (driver.WindowHandles.Count > 1)
+                {
+                    driver.SwitchTo().Window(driver.WindowHandles.Last());
+                }
+
+                // XPath를 사용하여 원하는 요소를 선택합니다.
+                var productElement = driver.FindElement(By.XPath("//*[@id=\"containerWithFilters\"]/div[3]/div[2]"));
+
+                // TODO: 원하는 작업을 추가합니다.
+                // 예: productElement.Text를 사용하여 값을 출력하거나 다른 처리를 합니다.
+            }
+            catch (Exception ex)
+            {
+                response = new
+                {
+                    success = false,
+                    message = $"서브카테고리로 이동 후 요소 선택 중 오류가 발생했습니다: {ex.Message}"
+                };
+            }
+        }
+
+        private void ConfigureBrowserOptions(ChromeOptions options)
+        {
+            options.AddArgument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36");
+            options.AddArgument("--disable-blink-features=AutomationControlled");
+            options.AddArgument("--start-maximized");
+            options.AddArgument("--disable-infobars");
+            options.AddArgument("--lang=ko");
+            options.AddArgument("start-page=https://www.google.com");
+            options.AddExcludedArgument("enable-automation");
+        }
+
+        private void RemoveWebDriverAttribute(IWebDriver driver)
+        {
+            ((IJavaScriptExecutor)driver).ExecuteScript("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})");
+        }
+
+        private void NavigateToGoogle(IWebDriver driver)
+        {
+            driver.Navigate().GoToUrl("https://www.google.co.kr/?gfe_rd=cr&ei=TEfFVqPBIIT-8wfNzb_ADw");
+            System.Threading.Thread.Sleep(TimeSpan.FromSeconds(1));
+        }
+
+        private async Task NavigateAndLoginIfNeeded(IWebDriver driver, string url)
+        {
+            driver.Navigate().GoToUrl(url);
+            System.Threading.Thread.Sleep(TimeSpan.FromSeconds(3));
+
+            if (!IsLoginPage(driver))
+            {
+                var cookies = driver.Manage().Cookies.AllCookies;
+                // 쿠키 저장 및 사용 로직 추가 필요.
+            }
+            else
+            {
+                await InformUserAndAwaitLogin(driver);
+            }
+        }
+
+        private async Task InformUserAndAwaitLogin(IWebDriver driver)
+        {
+            while (IsLoginPage(driver))
+            {
+                await Task.Delay(TimeSpan.FromSeconds(2));
+            }
+        }
+
+        private async Task<List<TemuCategory>> TemuExtractSubCategories(TemuCategory parentCategory, IWebDriver driver)
+        {
+            var url = BASE_TEMU_URL + "/kr";
+            var subUrl = parentCategory.LinkUrl.Replace(@"\u002F", "/");
+            System.Threading.Thread.Sleep(TimeSpan.FromSeconds(2));
+            driver.Navigate().GoToUrl(url + subUrl);
+
+            if (!IsLoginPage(driver))
+            {
+                var html = driver.PageSource;
+                return await ParseCategoriesFromHtmlAsync(html, parentCategory.OptId);
+            }
+            else
+            {
+                return new List<TemuCategory>();
+            }
+        }
+
+        private async Task<List<TemuCategory>> ParseCategoriesFromHtmlAsync(string html, int parentOptId)
+        {
+            var doc = new HtmlDocument();
+            doc.LoadHtml(html);
+
+            var categoryElements = doc.DocumentNode.SelectNodes("//a[contains(@class, '_3VEjS46S _1aapJ0dJ _3Kd-wJh0')]");
+            var categories = new List<TemuCategory>();
+
+            int displayOrderCounter = 1;
+            foreach (var elem in categoryElements)
+            {
+                var categoryName = elem.SelectSingleNode(".//h2[contains(@class, '_30WrERMT a5L0TOpM')]").InnerText.Trim();
+                var linkUrl = elem.GetAttributeValue("href", "");
+                var imageUrlNode = elem.SelectSingleNode(".//img[contains(@class, 'eIhG16Mc')]");
+                var imageUrl = imageUrlNode != null ? imageUrlNode.GetAttributeValue("src", "") : "";
+
+                var category = new TemuCategory
+                {
+                    OptName = categoryName,
+                    LinkUrl = linkUrl,
+                    ImageUrl = imageUrl,
+                    ParentOptId = parentOptId,
+                    DisplayOrder = displayOrderCounter++
+                };
+
+                categories.Add(category);
+            }
+
+            return await Task.FromResult(categories);
+        }
+
+        private string GetCurrentUrl(IWebDriver driver)
+        {
+            return ((IJavaScriptExecutor)driver).ExecuteScript("return window.location.href;").ToString();
+        }
+
+        private bool IsLoginPage(IWebDriver driver)
+        {
+            var currentUrl = GetCurrentUrl(driver);
+            return currentUrl.Equals(BASE_TEMU_URL + "/login.html");
+        }
+
+        private async Task<CategoryModel> ConvertToCategoryModel(TemuCategory temuCategory)
+        {
+            string description;
+
+            // 1차 카테고리인 경우
+            if (temuCategory.ParentOptId == 0)
+            {
+                description = temuCategory.OptId.ToString() + "|" + temuCategory.LinkUrl;
+            }
+            // 2차 (또는 하위) 카테고리인 경우
+            else
+            {
+                description = temuCategory.ParentOptId.ToString() + "|" + temuCategory.LinkUrl;
+            }
+
+            int? parentCategoryId = null;
+
+            if (temuCategory.ParentOptId != 0)
+            {
+                var parentCategory = await _categoryService.GetCategoryByDescriptionSplitAsync(description);
+
+                if (parentCategory != null)
+                {
+                    parentCategoryId = parentCategory.Id;
+                }
+            }
+
+            var decodedName = temuCategory.OptName.Replace("&amp;", "&");
+
+            // Download and upload the image
+            var pictureId = 0;
+            if (!string.IsNullOrEmpty(temuCategory.ImageUrl))
+            {
+                pictureId = await DownloadAndSetPictureId(temuCategory.ImageUrl);
+            }
+
+            // CategoryModel 설정
+            return new CategoryModel
+            {
+                Name = decodedName,
+                Description = description,
+                MetaKeywords = null,
+                MetaDescription = null,
+                MetaTitle = temuCategory.OptName,
+                PageSizeOptions = "6,3,9",
+                ParentCategoryId = parentCategoryId ?? 0,  // parentCategoryId가 null이면 0을 사용
+                CategoryTemplateId = 1,
+                PictureId = pictureId,
+                PageSize = 5,
+                AllowCustomersToSelectPageSize = true,
+                ShowOnHomepage = false,
+                IncludeInTopMenu = true,
+                Published = true,
+                Deleted = false,
+                DisplayOrder = temuCategory.DisplayOrder,
+                PriceRangeFiltering = true,
+                PriceTo = 10000,
+                ManuallyPriceRange = true,
+            };
+        }
+
+        // URL에서 확장자를 가져와 MIME 타입을 반환하는 함수
+        private async Task<string> GetMimeTypeFromUrl(string url)
+        {
+            var extension = Path.GetExtension(url)?.ToLower();
+            return extension switch
+            {
+                ".jpg" => "image/jpeg",
+                ".jpeg" => "image/jpeg",
+                ".png" => "image/png",
+                ".gif" => "image/gif",
+                ".bmp" => "image/bmp",
+                ".webp" => "image/webp",
+                ".tiff" => "image/tiff",
+                ".tif" => "image/tiff",
+                ".ico" => "image/x-icon",
+                ".svg" => "image/svg+xml",
+                ".heif" => "image/heif",
+                ".heic" => "image/heif",
+                _ => await GetMimeTypeFromUrlAsync(url) // 확장자에 따라 MIME 타입을 결정할 수 없는 경우 원격 요청을 통해 확인합니다.
+            };
+        }
+
+        async Task<string> GetMimeTypeFromUrlAsync(string url)
+        {
+            using (var httpClient = new HttpClient())
+            {
+                // HEAD 요청을 사용하여 리소스의 헤더만 가져옴 (전체 콘텐츠를 가져오지 않음)
+                var request = new HttpRequestMessage(HttpMethod.Head, url);
+
+                try
+                {
+                    var response = await httpClient.SendAsync(request);
+
+                    // 응답이 성공적이고 Content-Type 헤더가 있으면 해당 값을 반환
+                    if (response.IsSuccessStatusCode && response.Content.Headers.Contains("Content-Type"))
+                    {
+                        return response.Content.Headers.GetValues("Content-Type").FirstOrDefault();
+                    }
+                    else
+                    {
+                        // 성공적인 응답이 아니거나 Content-Type 헤더가 없는 경우 기본값으로 반환
+                        return "application/octet-stream";
+                    }
+                }
+                catch
+                {
+                    // 요청 중 오류가 발생한 경우 기본값으로 반환
+                    return "application/octet-stream";
+                }
+            }
+        }
+
+        private async Task<int> DownloadAndSetPictureId(string imageUrl)
+        {
+            var retryCount = 3;
+            string decodedUrl = System.Text.RegularExpressions.Regex.Unescape(imageUrl);
+
+            while (retryCount > 0)
+            {
+                try
+                {
+                    using var httpClient = new HttpClient();
+
+                    // 일반적인 웹 브라우저의 사용자 에이전트 설정
+                    httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
+
+                    var imageBytes = await httpClient.GetByteArrayAsync(decodedUrl); // 디코딩된 URL 사용
+                    var mimeType = await GetMimeTypeFromUrl(decodedUrl);
+                    var picture = await _pictureService.InsertPictureAsync(imageBytes, mimeType, null);
+                    if (picture != null)
+                    {
+                        return picture.Id;
+                    }
+                }
+                catch
+                {
+                    retryCount--;
+                    if (retryCount <= 0)
+                        throw; // 모든 재시도가 실패하면 예외 발생
+                    await Task.Delay(2000); // 2초 대기 후 재시도
+                }
+            }
+            return 0; // 이미지 다운로드 실패 시 0 반환
+        }
+
+        #endregion
+
 
         public virtual async Task<IActionResult> Create()
         {

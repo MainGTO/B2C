@@ -1,0 +1,17 @@
+.mega-menu .dropdown .subcategories {
+  display: none;
+}
+.mega-menu .dropdown .full .picture {
+  float: none;
+  width: auto;
+  height: auto;
+}
+.home-page .nop-jcarousel.manufacturer-grid,
+.home-page .nop-jcarousel.vendor-grid {
+    margin-bottom: -20px !important;
+}
+.home-page .nop-jcarousel.manufacturer-grid .item-box,
+.home-page .nop-jcarousel.vendor-grid .item-box {
+    margin-bottom: 0;
+    background: none;
+}

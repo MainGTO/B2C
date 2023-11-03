@@ -19,7 +19,6 @@
     </div>
     <div class="master-wrapper-content">
         @await Component.InvokeAsync(typeof(WidgetViewComponent), new { widgetZone = PublicWidgetZones.ContentBefore })
-
         @if (IsSectionDefined("Breadcrumb"))
         {
             @RenderSection("Breadcrumb") 
