@@ -799,20 +799,8 @@ namespace Nop.Services.Catalog
             if (string.IsNullOrEmpty(description))
                 return null;
 
-            return await _categoryRepository.Table.FirstOrDefaultAsync(c => c.Description.StartsWith(description + "|"));
+            return await _categoryRepository.Table.FirstOrDefaultAsync(c => c.Description == description);
         }
-
-        public async Task<Category> GetCategoryByDescriptionSplitAsync(string description)
-        {
-            if (string.IsNullOrEmpty(description))
-                return null;
-
-            string idFromDescription = description.Split('|').FirstOrDefault();
-
-            return await _categoryRepository.Table
-                .FirstOrDefaultAsync(c => c.Description.StartsWith(idFromDescription + "|") && !c.Deleted);
-        }
-
 
         public async Task<List<string>> GetCategoriesByDescriptionAsync()
         {

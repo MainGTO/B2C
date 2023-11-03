@@ -1,11 +1,5 @@
 @model CategorySearchModel
 
-<!-- sweetalert2 CSS from CDN -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" />
-
-<!-- sweetalert2 JS from CDN -->
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-
 @{
     //page title
     ViewBag.PageTitle = T("Admin.Catalog.Categories").Text;
@@ -22,34 +16,7 @@
     <h1 class="float-left">
         @T("Admin.Catalog.Categories")
     </h1>
-
     <div class="float-right">
-        @if (User.Identity.Name == "admin@shipgo.biz")
-        {
-            <button id="apiButton" class="btn btn-primary">
-                <i class="fas fa-plus-square"></i>
-                API
-            </button>
-        }
-
-        <script>
-            $('#apiButton').on('click', function (event) {
-                event.preventDefault();
-                event.stopPropagation();
-
-                $.ajax({
-                    cache: false,
-                    type: "GET", // `ApiTemuCategoryGetAndInsert`가 GET 방식인 경우
-                    url: '@(Url.Action("ApiTemuCategoryGetAndInsert", "Category"))', // `Category` 컨트롤러의 `ApiTemuCategoryGetAndInsert` 액션 메서드를 호출
-                    success: function (data) {
-                        Swal.fire("success", JSON.stringify(data), "success");
-                    },
-                    error: function (jqXHR, textStatus) {
-                        Swal.fire("error", "API Fail: " + jqXHR.responseText, "error");
-                    }
-                });
-            });
-        </script>
         <a asp-action="Create" class="btn btn-primary">
             <i class="fas fa-plus-square"></i>
             @T("Admin.Common.AddNew")

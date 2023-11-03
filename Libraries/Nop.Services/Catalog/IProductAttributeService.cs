@@ -58,29 +58,6 @@ namespace Nop.Services.Catalog
         Task<IList<ProductAttribute>> GetProductAttributeByIdsAsync(int[] productAttributeIds);
 
         /// <summary>
-        /// Gets a product attribute by its name
-        /// </summary>
-        /// <param name="name">Product attribute name</param>
-        /// <returns>
-        /// A task that represents the asynchronous operation
-        /// The task result contains the product attribute matching the specified name or null if not found
-        /// </returns>
-        Task<ProductAttribute> GetProductAttributeByNameAsync(string name);
-
-        /// <summary>
-        /// Gets a predefined product attribute value by attribute ID and value name
-        /// </summary>
-        /// <param name="productAttributeId">Product attribute ID</param>
-        /// <param name="name">Predefined product attribute value name</param>
-        /// <returns>
-        /// A task that represents the asynchronous operation
-        /// The task result contains the predefined product attribute value matching the specified attribute ID and name or null if not found
-        /// </returns>
-        Task<PredefinedProductAttributeValue> GetPredefinedProductAttributeValueByNameAsync(int productAttributeId, string name);
-
-
-
-        /// <summary>
         /// Inserts a product attribute
         /// </summary>
         /// <param name="productAttribute">Product attribute</param>

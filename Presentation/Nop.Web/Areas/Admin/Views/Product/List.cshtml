@@ -7,19 +7,12 @@
 
 <link rel="stylesheet" href="~/lib/fontawesome/css/all.css" asp-append-version="true" />
 <link rel="stylesheet" href="~/css/site.min.css" asp-append-version="true" />
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" />
 
 <!-- DataTables CSS -->
 <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.10.21/css/jquery.dataTables.css" />
 
 <!-- DataTables JS -->
 <script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/1.10.21/js/jquery.dataTables.js"></script>
-
-<!-- sweetalert2 CSS from CDN -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" />
-
-<!-- sweetalert2 JS from CDN -->
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
 <!-- sweetalert CSS from CDN -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/sweetalert/1.1.3/sweetalert.min.css" />
@@ -246,34 +239,9 @@
                         </div>
 
                         <style>
-                            .sku-text {
-                                max-width: 50px; /* 최대 너비 설정 */
-                                overflow: hidden; /* 넘치는 부분은 숨김 */
-                                text-overflow: ellipsis; /* 넘치는 텍스트를 ...으로 표시 */
-                                white-space: nowrap; /* 텍스트를 한 줄로 표시 */
-                                display: block; /* block 레벨 요소로 설정 (필요한 경우) */
-                            }
-
-                            .product-name-text {
-                                display: inline-block;
-                                width: 100%;
-                            }
-
                             .product-name-input {
                                 width: 100%;
                             }
-
-                            .btn-copy-sku {
-                                background: none;
-                                border: none;
-                                cursor: pointer;
-                                padding: 5px;
-                            }
-
-                            .product-name-input {
-                                width: 100%;
-                            }
-
                             .dropdown-submenu {
                                 position: relative;
                             }
@@ -293,41 +261,6 @@
                                 align-items: center;
                                 justify-content: space-between;
                             }
-
-                            /* 로딩 스피너 CSS 추가 시작 */
-                            #loadingSpinner {
-                                position: fixed;
-                                top: 0;
-                                left: 0;
-                                width: 100%;
-                                height: 100%;
-                                background-color: rgba(255, 255, 255, 0.8);
-                                z-index: 9999;
-                            }
-
-                            .spinner {
-                                border: 16px solid #f3f3f3; /* Light grey */
-                                border-top: 16px solid #3498db; /* Blue */
-                                border-radius: 50%;
-                                width: 50px;
-                                height: 50px;
-                                animation: spin 2s linear infinite;
-                                position: absolute;
-                                top: 50%;
-                                left: 50%;
-                                transform: translate(-50%, -50%);
-                            }
-
-                            @@keyframes spin {
-                                0% {
-                                    transform: translate(-50%, -50%) rotate(0deg);
-                                }
-
-                                100% {
-                                    transform: translate(-50%, -50%) rotate(360deg);
-                                }
-                            }
-                            /* 로딩 스피너 CSS 추가 끝 */
                         </style>
 
                         <div class="card card-default">
@@ -356,7 +289,7 @@
                                     },
                                     error: function (error) {
                                         console.error("카테고리 데이터를 가져오는데 실패했습니다.", error);
-                                        Swal.fire("오류 발생!", "카테고리 데이터를 가져오는데 실패했습니다.", "error");
+                                        swal("오류 발생!", "카테고리 데이터를 가져오는데 실패했습니다.", "error");
                                     }
                                 });
 
@@ -406,28 +339,28 @@
                                     var selectedCategoryId = $('#categoryDropdown').data('selected-id');
 
                                     if (!selectedCategoryId || selectedCategory === "선택한 카테고리") {
-                                        Swal.fire("알림", "카테고리를 먼저 선택해주세요.", "warning");
+                                        swal("알림", "카테고리를 먼저 선택해주세요.", "warning");
                                         return;
                                     }
 
                                     var selectedProductIds = selectedIds; // 선택된 상품 ID 목록 가져오기
 
                                     if (selectedProductIds.length === 0) {
-                                        Swal.fire("알림", "상품을 선택해주세요.", "warning");
+                                        swal("알림", "상품을 선택해주세요.", "warning");
                                         return;
                                     }
 
                                     // 선택한 상품과 카테고리 정보 출력
-                                    Swal.fire({
+                                    swal({
                                         title: "카테고리 변경 확인",
                                         text: "선택한 상품 개수: " + selectedProductIds.length + "개\n변경할 카테고리 이름: " + selectedCategory + "\n\n카테고리를 변경하시겠습니까?",
-                                        icon: "info",
+                                        type: "info",
                                         showCancelButton: true,
                                         confirmButtonText: "확인",
                                         cancelButtonText: "취소",
-                                    }).then((result) => {
-                                        if (result.isConfirmed) {
-                                            showLoadingSpinner();  // 로딩 스피너 표시
+                                        closeOnConfirm: false
+                                    }, function (isConfirm) {
+                                        if (isConfirm) {
                                             var postData = {
                                                 'productIds[]': selectedProductIds,
                                                 'categoryIds[]': [selectedCategoryId]
@@ -439,17 +372,15 @@
                                                 url: "@(Url.Action("UpdateProductCategories", "Product"))",
                                                 data: postData,
                                                 success: function (response) {
-                                                    hideLoadingSpinner();  // 로딩 스피너 숨기기
                                                     if (response.Success) {
-                                                        Swal.fire("알림", "상품의 카테고리가 성공적으로 업데이트되었습니다.", "success");
+                                                        swal("알림", "상품의 카테고리가 성공적으로 업데이트되었습니다.", "success");
                                                         updateTable('#products-grid');
                                                     } else {
-                                                        Swal.fire("알림", "카테고리 업데이트 중 오류가 발생했습니다.", "error");
+                                                        swal("알림", "카테고리 업데이트 중 오류가 발생했습니다.", "error");
                                                     }
                                                 },
                                                 error: function () {
-                                                    hideLoadingSpinner();  // 로딩 스피너 숨기기
-                                                    Swal.fire("알림", "카테고리 업데이트 중 오류가 발생했습니다.", "error");
+                                                    swal("알림", "카테고리 업데이트 중 오류가 발생했습니다.", "error");
                                                 }
                                             });
                                         }
@@ -484,14 +415,6 @@
                                         html += '</li>';
                                     }
                                     return html;
-                                }
-
-                                function showLoadingSpinner() {
-                                    $("body").append('<div id="loadingSpinner"><div class="spinner"></div></div>');
-                                }
-
-                                function hideLoadingSpinner() {
-                                    $("#loadingSpinner").remove();
                                 }
                             });
                         </script>
@@ -537,13 +460,12 @@
                                 new ColumnProperty(nameof(ProductModel.Name))
                                 {
                                 Title = T("Admin.Catalog.Products.Fields.Name").Text,
-                                Render = new RenderCustom("renderProductNameWithEditButton")
+                                Render = new RenderCustom("renderProductNameWithEditButton"),
                                 },
                                 new ColumnProperty(nameof(ProductModel.Sku))
                                 {
                                 Title = T("Admin.Catalog.Products.Fields.Sku").Text,
-                                Width = "50",
-                                Render = new RenderCustom("renderSkuWithCopyButton")
+                                Width = "80"
                                 },
                                 new ColumnProperty(nameof(ProductModel.Price))
                                 {
@@ -554,7 +476,7 @@
                                 new ColumnProperty(nameof(ProductModel.StockQuantityStr))
                                 {
                                 Title = T("Admin.Catalog.Products.Fields.StockQuantity").Text,
-                                Width = "75"
+                                Width = "70"
                                 },
                                 new ColumnProperty(nameof(ProductModel.Published))
                                 {
@@ -574,11 +496,6 @@
                                 })
 
                                 <script>
-                                    // SKU 클립보드 복사 터튼 랜더링
-                                    function renderSkuWithCopyButton(data, type, row, meta) {
-                                        return '<span class="sku-text">' + data + '</span> <button class="btn-copy-sku custom-placement" data-sku="' + data + '" title="' + data + '"><i class="fas fa-copy"></i></button>';
-                                    }
-
                                     function renderColumnPrice(data, type, row, meta) {
                                         return (row.ProductTypeId != @((int)ProductType.GroupedProduct) ) ? data : null;
                                     }
@@ -605,7 +522,7 @@
                                                 event.stopPropagation();
                                                 var newName = input.val().trim();
                                                 if (!newName) {
-                                                    Swal.fire('오류', '상품 이름은 빈 값일 수 없습니다.', 'error');
+                                                    swal('오류', '상품 이름은 빈 값일 수 없습니다.', 'error');
                                                     input.focus();
                                                     return;
                                                 }
@@ -662,68 +579,6 @@
                                             $('#delete-selected-action-confirmation').modal('toggle');
                                             // 모달창 안닫혀서 비활성화함
                                             //return false;
-                                        });
-
-                                        $('body').on('click', '.btn-copy-sku', function (event) {
-                                            event.preventDefault();
-
-                                            var $btn = $(this);
-                                            var sku = $btn.data('sku');
-
-                                            var $temp = $("<input>");
-                                            $("body").append($temp);
-                                            $temp.val(sku).select();
-                                            document.execCommand("copy");
-                                            $temp.remove();
-
-                                            // 현재의 툴팁을 제거
-                                            $btn.tooltip('dispose');
-
-                                            // 클릭한 툴팁 메시지 변경 및 즉시 표시
-                                            $btn.attr('title', 'SKU가 복사되었습니다.')
-                                                .tooltip({
-                                                    trigger: 'hover',
-                                                    delay: { show: 100, hide: 100 },
-                                                    placement: 'right',
-                                                    popperConfig: {
-                                                        modifiers: [
-                                                            {
-                                                                name: 'offset',
-                                                                options: {
-                                                                    offset: [30, 0]  // 이 값을 조정하여 위치를 세부 조정할 수 있습니다. (x축, y축)
-                                                                }
-                                                            }
-                                                        ]
-                                                    }
-                                                })
-                                                .tooltip('show');
-                                            // 일정 시간 후 원래의 메시지로 복원하고 툴팁을 숨김
-                                            setTimeout(function () {
-                                                $btn.tooltip('dispose');  // 현재의 툴팁을 제거
-                                                $btn.attr('title', sku)
-                                                    .tooltip({
-                                                        trigger: 'hover',
-                                                        delay: { show: 100, hide: 100 },
-                                                        placement: 'right',
-                                                        popperConfig: {
-                                                            modifiers: [
-                                                                {
-                                                                    name: 'offset',
-                                                                    options: {
-                                                                        offset: [30, 0]
-                                                                    }
-                                                                }
-                                                            ]
-                                                        }
-                                                    })
-                                                    .tooltip('hide');
-                                            }, 1000);
-                                        });
-
-                                        // 모든 툴팁 요소를 부트스트랩 툴팁으로 초기화
-                                        var tooltipTriggerList = [].slice.call(document.querySelectorAll('.btn-copy-sku'));
-                                        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-                                            return new bootstrap.Tooltip(tooltipTriggerEl, { trigger: 'hover', delay: { show: 100, hide: 100 }, placement: 'bottom-end' });
                                         });
                                     });
                                 </script>
@@ -879,17 +734,9 @@
                 var storedPageNumber = parseInt(getCookie('dataTablePageNumber'));
 
                 var table = $('#products-grid').DataTable({
-                    destroy: true,
                     autoWidth: false,
                     pageLength: defaultPageLength,
                     retrieve: true,
-                    drawCallback: function () {
-                        // 이전에 추가했던 코드
-                        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-                        tooltipTriggerList.map(function (tooltipTriggerEl) {
-                            return new bootstrap.Tooltip(tooltipTriggerEl, { trigger: 'hover', delay: { show: 100, hide: 100 } });
-                        });
-                    },
                     initComplete: function () {
                         if (!isNaN(storedPageNumber) && storedPageNumber > 0) {
                             // 저장된 페이지 번호가 유효한지 확인
@@ -903,7 +750,7 @@
                     }
                 });
 
-                table.page(3).draw(true);
+                table.page(3).draw(false);
                 table.page.len(defaultPageLength).draw(); // 페이지 크기 설정 및 그리기
 
                 // 페이지 크기가 변경될 때 설정 저장하기

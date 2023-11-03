@@ -295,8 +295,6 @@ namespace Nop.Services.Catalog
 
         Task<Category> GetCategoryByDescriptionAsync(string description);
 
-        Task<Category> GetCategoryByDescriptionSplitAsync(string description);
-
         Task<List<string>> GetCategoriesByDescriptionAsync();
     }
 }

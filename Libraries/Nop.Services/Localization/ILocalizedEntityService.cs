@@ -38,17 +38,6 @@ namespace Nop.Services.Localization
         Task<string> GetLocalizedValueAsync(int languageId, int entityId, string localeKeyGroup, string localeKey);
 
         /// <summary>
-        /// 지정된 번역된 이름으로 ProductAttribute가 있는지 확인합니다.
-        /// </summary>
-        /// <param name="localeKeyGroup">Locale key group.</param>
-        /// <param name="localeKey">Locale key.</param>
-        /// <param name="localizedName">확인하려는 번역된 이름.</param>
-        /// <returns>
-        /// 일치하는 ProductAttribute가 있으면 true를 반환하고, 없으면 false를 반환합니다.
-        /// </returns>
-        public Task<int?> GetEntityIdByLocalizedNameAsync(string localeKeyGroup, string localeKey, string localizedName);
-
-        /// <summary>
         /// Save localized value
         /// </summary>
         /// <typeparam name="T">Type</typeparam>
