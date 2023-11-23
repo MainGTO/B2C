@@ -213,7 +213,7 @@ namespace Nop.Web.Areas.Admin.Controllers
                 await SaveCategoryMappingsAsync(product, model);
             }
 
-            #region Remove Category
+            /*#region Remove Category
 
             // 전체 카테고리 가져오기
             var categories = await _categoryService.GetAllCategoriesAsync();
@@ -240,7 +240,7 @@ namespace Nop.Web.Areas.Admin.Controllers
                 }
             }
 
-            #endregion
+            #endregion*/
 
             return Json(new { Success = true, Message = "상품의 카테고리가 성공적으로 업데이트되었습니다." });
         }
