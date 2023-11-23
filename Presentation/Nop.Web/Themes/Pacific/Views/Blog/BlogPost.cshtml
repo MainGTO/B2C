@@ -22,6 +22,7 @@
 }
 <div class="page blogpost-page">
     @await Component.InvokeAsync(typeof(WidgetViewComponent), new { widgetZone = PublicWidgetZones.BlogPostPageTop, additionalData = Model })
+    <div style="height: 50px;"></div>
     <div class="page-title">
         <h1>@Model.Title</h1>
     </div>

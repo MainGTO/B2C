@@ -22,10 +22,10 @@
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
 <!-- sweetalert CSS from CDN -->
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/sweetalert/1.1.3/sweetalert.min.css" />
+@* <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/sweetalert/1.1.3/sweetalert.min.css" /> *@
 
 <!-- sweetalert JS from CDN -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/sweetalert/1.1.3/sweetalert.min.js"></script>
+@* <script src="https://cdnjs.cloudflare.com/ajax/libs/sweetalert/1.1.3/sweetalert.min.js"></script> *@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-pzjw8f+ua7Kw1TIq0v8FqFjcJ6pajs/rfdfs3SO+kD5tr5Szkbe5Ck4Ck4C2DgHf" crossorigin="anonymous"></script>
 
@@ -55,13 +55,213 @@
 
             <div class="float-right" style="display: flex; justify-content: space-between;">
 
-                @if (User.Identity.Name == "admin@shipgo.biz")
+                @if (User.Identity.Name == "admin@shipgo.biz" || User.Identity.Name == "ceo@shipgo.biz")
                 {
-                    <a asp-action="ApiCreate" class="btn btn-primary">
+                    <div class="btn-group">
+                        <button type="button" class="btn btn-primary dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                            API 종류 선택 <span class="caret"></span>
+                        </button>
+                        <ul class="dropdown-menu" id="apiType">
+                            <li><a class="dropdown-item" href="#" data-value="JD">징동닷컴(종합쇼핑)</a></li>
+                            <li><a class="dropdown-item" href="#" data-value="1688">1688(도매)</a></li>
+                            <li><a class="dropdown-item" href="#" data-value="Tmall">티몰(B2C)</a></li>
+                            <li><a class="dropdown-item" href="#" data-value="VIP">VIP닷컴(종합쇼핑)</a></li>
+                            <li><a class="dropdown-item" href="#" data-value="mogujie">모구지에(실시간커머스)</a></li>
+                            <li><a class="dropdown-item" href="#" data-value="suning">쑤닝닷컴(전자제품)</a></li>
+                            <li><a class="dropdown-item" href="#" data-value="Taobao">타오바오</a></li>
+                        </ul>
+                    </div>
+                    <button id="apiButton" class="btn btn-primary">
                         <i class="fas fa-plus-square"></i>
                         API
-                    </a>
+                    </button>
+
+                    <!-- Modal -->
+                    <div class="modal fade" id="productQueryModal" tabindex="-1" role="dialog" aria-labelledby="productQueryModalLabel" aria-hidden="true">
+                        <div class="modal-dialog" role="document">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title" id="productQueryModalLabel">API 상품 쿼리</h5>
+                                    <button type="button" class="close" data-bs-dismiss="modal" aria-label="Close">
+                                        <span aria-hidden="true">&times;</span>
+                                    </button>
+                                </div>
+                                <div class="modal-body">
+                                    <!-- Form -->
+                                    <form id="productQueryForm">
+                                        <div class="form-group">
+                                            <label for="apiName">API 이름</label>
+                                            <input type="text" class="form-control" id="apiName" name="apiName" placeholder="API 이름" value="" readonly>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="queryLanguage">쿼리 언어</label>
+                                            <select class="form-control" id="queryLanguage" name="queryLanguage">
+                                                <option value="en">English (en)</option>
+                                                <option value="cn">中文 (cn)</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="targetLanguage">대상 언어</label>
+                                            <select class="form-control" id="targetLanguage" name="targetLanguage">
+                                                <option value="en">English (en)</option>
+                                                <option value="cn">中文 (cn)</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="searchOrCategory">검색 옵션</label>
+                                            <select class="form-control" id="searchOrCategory" name="searchOrCategory">
+                                                <option value="searchName">검색단어</option>
+                                                <option value="categoryName">카테고리 이름</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label id="searchOrCategoryLabel" for="searchOrCategoryValue">검색단어 또는 카테고리 값</label>
+                                            <input type="text" class="form-control" id="searchOrCategoryValue" name="searchOrCategoryValue" placeholder="값을 입력하세요">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="page">페이지 번호</label>
+                                            <input type="number" class="form-control" id="page" name="page" placeholder="검색할 상품의 페이지 번호를 입력하세요" value="1">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="size">상품수집건수</label>
+                                            <input type="number" class="form-control" id="size" name="size" placeholder="상품을 수집할 건수를 입력하세요" value="200">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="sort">정렬 방식</label>
+                                            <select class="form-control" id="sort" name="sort">
+                                                <option value="volume_desc">판매량 내림차순</option>
+                                                <option value="vendor_rating_desc">판매자 평점 내림차순</option>
+                                                <!-- 추가적인 정렬 옵션을 여기에 삽입 -->
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="minSellerRating">최소 판매자 평점</label>
+                                            <input type="number" class="form-control" id="minSellerRating" name="minSellerRating" placeholder="최소 판매자 평점을 입력하세요" value="3">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="maxSellerRating">최대 판매자 평점</label>
+                                            <input type="number" class="form-control" id="maxSellerRating" name="maxSellerRating" placeholder="최대 판매자 평점을 입력하세요" value="5">
+                                        </div>
+                                        <!-- Form 내부에 숨겨진 필드 추가 -->
+                                        <input type="hidden" id="selectedApiName" name="apiName">
+                                    </form>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+                                    <button type="button" class="btn btn-primary" id="submitQuery">확인</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 }
+
+                <script>
+                    // 서버 측에서 값을 받아옴
+                    var userName = '@User.Identity.Name';
+                    // JavaScript의 alert 함수를 사용하여 메시지 박스를 띄움
+                    // alert("The user is: " + userName);
+
+                    var selectedMall = "API 종류 선택"; // 기본값을 "API 종류 선택"으로 설정합니다.
+
+                    $('#apiType .dropdown-item').on('click', function (event) {
+                        event.preventDefault();
+                        selectedMall = $(this).attr('data-value'); // 드롭다운에서 선택한 값으로 selectedMall을 설정합니다.
+
+                        // 숨겨진 필드에 선택된 API 이름을 설정합니다.
+                        $('#selectedApiName').val(selectedMall);
+
+                        $(".btn-primary.dropdown-toggle").html($(this).text() + " <span class='caret'></span>"); // 버튼의 HTML을 변경합니다.
+                        $(".btn-primary.dropdown-toggle").append('<span class="caret"></span>'); // 케럿을 다시 추가합니다.
+                    });
+
+                    $('#apiButton').on('click', function (event) {
+                        event.preventDefault();
+                        event.stopPropagation();
+
+                        // API 종류를 선택하지 않았을 경우
+                        if (selectedMall === "API 종류 선택") {
+                            Swal.fire("Error", "API 종류를 선택해주세요.", "error");
+                            return;
+                        }
+
+                        var now = new Date();
+                        var krTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+                        var hours = krTime.getHours();
+
+
+
+                        // 모달을 표시
+                        $('#productQueryModal').modal('show');
+                        $('#apiName').val(selectedMall); // 이 줄을 추가하여 선택된 API 이름을 입력 필드에 설정합니다.
+                    });
+                    $('#submitQuery').on('click', function (event) {
+                        event.preventDefault();
+
+                        // 선택된 검색 또는 카테고리 값 가져오기
+                        var searchOrCategory = $('#searchOrCategory').val();
+                        var value = $('#searchOrCategoryValue').val();
+
+                        // formData 객체 생성
+                        var formData = {
+                            apiName: $('#apiName').val(),
+                            page: $('#page').val(),
+                            size: $('#size').val(),
+                            sort: $('#sort').val(),
+                            minSellerRating: $('#minSellerRating').val(),
+                            maxSellerRating: $('#maxSellerRating').val(),
+                            queryLanguage: $('#queryLanguage').val(),
+                            targetLanguage: $('#targetLanguage').val()
+                        };
+
+                        // 선택된 값에 따라 SearchName 또는 CategoryName 설정
+                        if (searchOrCategory === 'searchName') {
+                            formData.searchName = value;
+                        } else {
+                            formData.categoryName = value;
+                        }
+
+                        // 대한민국 시간으로 오후 7시 이후와 오전 7시 이전 사이만 요청 가능
+                        /*if (!(hours >= 19 || hours < 7)) {
+                            Swal.fire("Error", "한국시간 기준으로 오후 7시 이후와 오전 7시 이전 사이에<br>상품 수집 API 요청이 가능합니다.", "error");
+                            return;
+                        }*/
+
+                        // 서버로 데이터 전송
+                        $.ajax({
+                            cache: false,
+                            type: "POST",
+                            url: '@Url.Action("ApiCreate", "Product")', // URL 확인 필요
+                            data: formData,
+                            headers: {
+                                "RequestVerificationToken": $('input[name="__RequestVerificationToken"]').val()
+                            },
+                            success: function (data) {
+                                // 성공 처리
+                                $('#productQueryModal').modal('hide');
+                                Swal.fire("성공", JSON.stringify(data), "success");
+                            },
+                            error: function (jqXHR, textStatus, errorThrown) {
+                                // 오류 처리
+                                Swal.fire("오류", "API 실패: " + textStatus + " " + errorThrown, "error");
+                            }
+                        });
+                    });
+
+                    // 콤보 박스 값 변경 시 레이블 업데이트
+                    $('#searchOrCategory').on('change', function () {
+                        var selectedOption = $(this).val();
+                        if (selectedOption === 'searchName') {
+                            $('#searchOrCategoryLabel').text('검색단어');
+                            $('#searchOrCategoryValue').attr('placeholder', '검색단어를 입력하세요');
+                        } else {
+                            $('#searchOrCategoryLabel').text('카테고리 이름');
+                            $('#searchOrCategoryValue').attr('placeholder', '카테고리 이름을 입력하세요');
+                        }
+                    });
+
+                    // 초기 레이블 설정
+                    $('#searchOrCategory').trigger('change');
+                </script>
 
                 <div class="float-right">
                     <a asp-action="Create" class="btn btn-primary">
@@ -563,7 +763,7 @@
                                 ClassName = NopColumnClassDefaults.CenterAll,
                                 Render = new RenderBoolean()
                                 },
-                                new ColumnProperty(nameof(ProductModel.Id))
+                                new ColumnProperty(nameof(ProductModel))
                                 {
                                 Title = T("Admin.Common.Edit").Text,
                                 Width = "60",
@@ -589,12 +789,19 @@
                                         return '<span class="product-name-text">' + data + '</span> <button class="btn-edit-product-name" data-product-id="' + row.Id + '">' + editProductNameText + '</button>';
                                     }
 
+                                    function renderColumnPrice(data, type, row, meta) {
+                                        return `
+                                            <span class="price-text">${data}</span>
+                                            <button class="btn-edit-price" data-product-id="${row.Id}" data-original-price="${data}">수정</button>
+                                        `;
+                                    }
+
                                     $(document).ready(function () {
                                         $('body').on('click', '.btn-edit-product-name', function () {
                                             var $btn = $(this);
                                             var originalName = $btn.siblings('.product-name-text').text();
                                             var input = $('<input type="text" class="product-name-input" value="' + originalName + '"/>');
-                                            var updateButton = $('<button class="btn-update-product-name" data-product-id="' + $btn.data('product-id') + '">최신화</button>');
+                                            var updateButton = $('<button class="btn-update-product-name" data-product-id="' + $btn.data('product-id') + '">완료</button>');
                                             var cancelButton = $('<button class="btn-cancel-product-name">취소</button>');
 
                                             $btn.siblings('.product-name-text').replaceWith(input);
@@ -638,9 +845,56 @@
                                             });
                                         });
 
-                                        $('#delete-selected-action-confirmation-submit-button').bind('click', function () {
+                                        $('body').on('click', '.btn-edit-price', function () {
+                                            var $btn = $(this);
+                                            var productId = $btn.data('product-id');
+                                            var originalPrice = $btn.siblings('.price-text').text();
+                                            var input = $('<input type="text" class="price-input" value="' + originalPrice + '"/>');
+                                            var updateButton = $('<button class="btn-update-price" data-product-id="' + productId + '">완료</button>');
+                                            var cancelButton = $('<button class="btn-cancel-price">취소</button>');
+
+                                            $btn.siblings('.price-text').replaceWith(input);
+                                            $btn.after(updateButton).after(cancelButton).remove();
+
+                                            updateButton.on('click', function () {
+                                                var newPrice = input.val().trim();
+                                                var regex = /^[0-9]+(\.[0-9]{1,4})?$/; // 소수점 네 자리까지 허용하는 정규식
+
+                                                if (!regex.test(newPrice) || parseFloat(newPrice) < 0) {
+                                                    Swal.fire('오류', '유효한 가격을 입력해야 합니다. (최대 소수점 4자리)', 'error');
+                                                    input.focus();
+                                                    return;
+                                                }
+
+                                                $.ajax({
+                                                    cache: false,
+                                                    type: "POST",
+                                                    url: '@Url.Action("UpdateProductPrice", "Product")',
+                                                    data: { productId: productId, newPrice: newPrice },
+                                                    success: function () {
+                                                        input.replaceWith('<span class="price-text">' + newPrice + '</span>');
+                                                        cancelButton.remove();
+                                                        updateButton.replaceWith('<button class="btn-edit-price" data-product-id="' + productId + '">수정</button>');
+                                                    },
+                                                    error: function (jqXHR, textStatus, errorThrown) {
+                                                        Swal.fire('오류', '가격 업데이트에 실패했습니다: ' + errorThrown, 'error');
+                                                    }
+                                                });
+                                            });
+
+                                            cancelButton.on('click', function () {
+                                                input.replaceWith('<span class="price-text">' + originalPrice + '</span>');
+                                                cancelButton.remove();
+                                                updateButton.replaceWith('<button class="btn-edit-price" data-product-id="' + productId + '">수정</button>');
+                                            });
+                                        });
+
+                                        // "예" 버튼 클릭 이벤트 처리
+                                        $('#delete-selected-action-confirmation-submit-button').click(function (event) {
+                                            event.preventDefault(); // 폼 제출 방지
+
                                             var postData = {
-                                                selectedIds: selectedIds
+                                                selectedIds: selectedIds // 이 부분은 해당하는 변수를 정확하게 설정해야 합니다.
                                             };
                                             addAntiForgeryToken(postData);
                                             $.ajax({
@@ -657,11 +911,13 @@
                                                         return;
                                                     }
                                                     updateTable('#products-grid');
+                                                    $('#delete-selected-action-confirmation').modal('hide'); // AJAX 요청 완료 후 모달 닫기
+                                                    $('#delete-selected-action-confirmation').removeClass('show'); // 모달창 닫기
+                                                    $('.modal-backdrop').remove(); // 오버레이 제거
+                                                    $('body').removeClass('modal-open'); // 'modal-open' 클래스 제거
+                                                    $('body').css('padding-right', ''); // 스크롤바 스타일 초기화
                                                 }
                                             });
-                                            $('#delete-selected-action-confirmation').modal('toggle');
-                                            // 모달창 안닫혀서 비활성화함
-                                            //return false;
                                         });
 
                                         $('body').on('click', '.btn-copy-sku', function (event) {
@@ -976,7 +1232,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h4 class="modal-title" id="importexcel-window-title">@T("Admin.Common.ImportFromExcel")</h4>
-                <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+                <button type="button" class="close" data-bs-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
             </div>
             <form asp-controller="Product" asp-action="ImportExcel" method="post" enctype="multipart/form-data">
                 <div class="form-horizontal">

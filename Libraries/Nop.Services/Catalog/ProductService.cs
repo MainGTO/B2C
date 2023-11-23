@@ -564,6 +564,8 @@ namespace Nop.Services.Catalog
             await _productRepository.DeleteAsync(products);
         }
 
+        private bool _toggleSort = false;
+
         /// <summary>
         /// Gets all products displayed on the home page
         /// </summary>
@@ -571,19 +573,24 @@ namespace Nop.Services.Catalog
         /// A task that represents the asynchronous operation
         /// The task result contains the products
         /// </returns>
+        /// orderby p.DisplayOrder, p.Id 기본정렬 
         public virtual async Task<IList<Product>> GetAllProductsDisplayedOnHomepageAsync()
         {
+            var random = new Random();
             var products = await _productRepository.GetAllAsync(query =>
             {
-                return from p in query
-                       orderby p.DisplayOrder, p.Id
-                       where p.Published &&
-                             !p.Deleted &&
-                             p.ShowOnHomepage
-                       select p;
-            }, cache => cache.PrepareKeyForDefaultCache(NopCatalogDefaults.ProductsHomepageCacheKey));
+                query = query.Where(p => p.Published && !p.Deleted && p.ShowOnHomepage);
+                query = random.Next(2) == 0
+                        ? query.OrderBy(p => p.DisplayOrder).ThenBy(p => p.Id)
+                        : query.OrderByDescending(p => p.DisplayOrder).ThenByDescending(p => p.Id);
 
-            return products;
+                return query;
+            });
+
+            // 여기서 리스트를 랜덤으로 섞습니다.
+            var randomizedProducts = products.OrderBy(x => Guid.NewGuid()).ToList();
+
+            return randomizedProducts;
         }
 
         /// <summary>

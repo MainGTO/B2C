@@ -58,8 +58,14 @@ using System.Diagnostics;
 using FluentMigrator.Runner;
 using DocumentFormat.OpenXml.Drawing.Diagrams;
 using Category = Nop.Core.Domain.Catalog.Category;
-using DocumentFormat.OpenXml.EMMA;
-using LinqToDB.Linq.Builder;
+
+using System.Drawing;
+using Emgu.CV;
+using Emgu.CV.Structure;
+using Emgu.CV.CvEnum;
+using Emgu.CV.Util;
+using System.Drawing.Imaging;
+using DocumentFormat.OpenXml.Office2010.Excel;
 
 namespace Nop.Web.Areas.Admin.Controllers
 {
@@ -1491,6 +1497,265 @@ namespace Nop.Web.Areas.Admin.Controllers
 
         #endregion
 
+
+        #region Api1688
+
+        public class Search1688Info
+        {
+            public string Language { get; set; }
+            public int FramePosition { get; set; }
+            public int FrameSize { get; set; }
+
+            public string CategoryId { get; set; }
+            public string ItemTitle { get; set; }
+            public string OrderBy { get; set; }
+            public int MinPrice { get; set; }
+            public int MaxPrice { get; set; }
+            public int MinVolume { get; set; }
+            public string ImageUrl { get; set; }
+        }
+
+        public class OrderByFrom1988
+        {
+            public const string DEFAULT = "Default";
+            public const string PRICE_ASC = "Price:Asc";
+            public const string PRICE_DESC = "Price:Desc";
+            public const string TOTAL_PRICE_ASC = "TotalPrice:Asc";
+            public const string TOTAL_PRICE_DESC = "TotalPrice:Desc";
+            public const string VOLUME_DESC = "Volume:Desc";
+            public const string VENDOR_RATING_DESC = "VendorRating:Desc";
+            public const string UPDATED_TIME_DESC = "UpdatedTime:Desc";
+        }
+
+
+        public async Task<List<ProductInfo>> GetProductsFrom1688Async(string searchQuery)
+        {
+            const string apiKey = "e9e7dd9c85msh4c01ab54707ebc8p120a38jsn0ab00d00a6cf";
+            const string apiHost = "otapi-1688.p.rapidapi.com";
+
+            var maxRetryCount = 3; // 최대 재시도 횟수
+            var retryCount = 0;
+
+            while (retryCount < maxRetryCount)
+            {
+                try
+                {
+                    var client = new RestClient("https://otapi-1688.p.rapidapi.com/BatchSearchItemsFrame");
+                    var request = new RestRequest(Method.GET);
+
+                    /*request.AddQueryParameter("language", search1688Info.Language);
+                    request.AddQueryParameter("framePosition", search1688Info.FramePosition.ToString());
+                    request.AddQueryParameter("frameSize", search1688Info.FrameSize.ToString());
+                    request.AddQueryParameter("CategoryId", search1688Info.CategoryId.ToString());
+                    request.AddQueryParameter("ItemTitle", search1688Info.ItemTitle);
+                    request.AddQueryParameter("OrderBy", search1688Info.OrderBy);
+                    request.AddQueryParameter("MinPrice", search1688Info.MinPrice.ToString());
+                    request.AddQueryParameter("MaxPrice", search1688Info.MaxPrice.ToString());
+                    request.AddQueryParameter("MinVolume", search1688Info.MinVolume.ToString());
+                    request.AddQueryParameter("ImageUrl", search1688Info.ImageUrl);*/
+
+                    request.AddQueryParameter("language", "en");
+                    request.AddQueryParameter("framePosition", "0");
+                    request.AddQueryParameter("frameSize", "5");
+
+                    request.AddQueryParameter("ItemTitle", searchQuery);
+                    request.AddQueryParameter("OrderBy", "Popularity:Desc");
+                    request.AddQueryParameter("MinPrice", "0");
+                    request.AddQueryParameter("MaxPrice", "999999");
+                    request.AddQueryParameter("MinVolume", "100");
+
+                    request.AddHeader("X-RapidAPI-Key", apiKey);
+                    request.AddHeader("X-RapidAPI-Host", apiHost);
+
+                    var response = await client.ExecuteAsync(request);
+
+                    if (response.StatusCode != HttpStatusCode.OK)
+                    {
+                        throw new Exception($"API call failed with status code: {response.StatusCode}");
+                    }
+
+                    var productDataList = JsonConvert.DeserializeObject<dynamic>(response.Content);
+                    var productList = new List<ProductInfo>();
+
+                    if (productDataList != null && productDataList.Result != null && productDataList.Result.Items != null)
+                    {
+                        foreach (var productData in productDataList.Result.Items.Items.Content)
+                        {
+                            var url = productData.TaobaoItemUrl.ToString();
+                            var title = productData.Title.ToString();
+                            var originalTitle = productData.OriginalTitle.ToString();
+                            var category_id = productData.CategoryId.ToString();
+                            var id = productData.Id.ToString();
+
+                            
+                            productList.Add(new ProductInfo { Url = url, Title = title, OriginalTitle = originalTitle, CategoryId = category_id, Id = id });
+                        }
+                    }
+                    else
+                    {
+                        throw new Exception("The response from the API was not as expected.");
+                    }
+
+                    return productList;
+                }
+                catch (Exception ex)
+                {
+                    retryCount++;
+
+                    if (retryCount >= maxRetryCount)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"GetProductsFromJdAsync Error Text: '{ex.Message}'");
+                        return null;
+                    }
+
+                    await Task.Delay(1000 * retryCount);
+                }
+            }
+
+            return null;
+        }
+
+        public async Task<TaobaoProductInfo> GetProductFrom1688Async(string productId)
+        {
+            var maxRetryCount = 3; // 최대 재시도 횟수
+            var retryCount = 0;
+            while (retryCount < maxRetryCount)
+            {
+                try
+                {
+                    System.Diagnostics.Debug.WriteLine($"1688 productId text: '{productId}'");
+
+                    var client = new HttpClient();
+                    var request = new HttpRequestMessage(HttpMethod.Get, $"https://otapi-1688.p.rapidapi.com/BatchGetItemFullInfo?language=en&itemId={productId}");
+                    request.Headers.Add("X-RapidAPI-Key", "e9e7dd9c85msh4c01ab54707ebc8p120a38jsn0ab00d00a6cf");
+                    request.Headers.Add("X-RapidAPI-Host", "otapi-1688.p.rapidapi.com");
+                    var response = await client.SendAsync(request);
+                    response.EnsureSuccessStatusCode();
+
+                    var responseContent = await response.Content.ReadAsStringAsync();
+                    var data = JObject.Parse(responseContent);
+
+                    var productInfo = new TaobaoProductInfo
+                    {
+                        CatId = data["Result"]["Item"]["CategoryId"]?.ToString() ?? string.Empty,
+                        CreatedTime = data["Result"]["Item"]["CreatedTime"]?.ToString() ?? string.Empty,
+                        Description = new Description
+                        {
+                            Html = await GetProductFrom1688DescriptionAsync(productId) // API 호출을 통해 HTML 설명을 받아옴
+                        },
+                        DetailUrl = data["Result"]["Item"]["TaobaoItemUrl"]?.ToString() ?? string.Empty,
+                        ItemImgs = data["Result"]["Item"]["Pictures"]?.ToObject<List<ImageObject>>() ?? new List<ImageObject>(),
+                        NumIid = data["Result"]["Item"]["Id"]?.ToString(),
+                        OriginalPrice = data["Result"]["Item"]["OriginalPrice"]?.ToObject<decimal>() ?? 0m,
+                        OriginalTitle = data["Result"]["Item"]["OriginalTitle"]?.ToString() ?? string.Empty,
+                        PicUrl = data["Result"]["Item"]["MainPictureUrl"]?.ToString() ?? string.Empty,
+                        Price = data["Result"]["Item"]["Price"]["OriginalPrice"] != null ? Convert.ToDecimal(data["Result"]["Item"]["Price"]["OriginalPrice"].ToString()) : 0m,
+                        Props1688 = data["Result"]["Item"]["Attributes"]?.ToObject<List<Props1688>>() ?? new List<Props1688>(),
+                        Title = data["Result"]["Item"]["Title"]?.ToString() ?? string.Empty,
+                    };
+
+                    if (data["ConfiguredItems"] is JArray configuredItemsArray)
+                    {
+                        productInfo.ConfiguredItems = new List<ConfiguredItem>();
+                        foreach (var item in configuredItemsArray)
+                        {
+                            var configuredItem = new ConfiguredItem
+                            {
+                                Id = item["Id"]?.ToString(),
+                                Quantity = item["Quantity"]?.ToObject<int>() ?? 0,
+                                SalesCount = item["SalesCount"]?.ToObject<int>() ?? 0,
+                                Configurators = new List<PropValue>(),
+                                Price = new ConfiguredItem.PriceInfo
+                                {
+                                    OriginalPrice = item["Price"]["OriginalPrice"]?.ToObject<decimal>() ?? 0m,
+                                    ConvertedPrice = item["Price"]["ConvertedPrice"]?.ToObject<decimal>() ?? 0m,
+                                    IsShippingIncluded = item["Price"]["IsShippingIncluded"]?.ToObject<bool>() ?? false
+                                }
+                            };
+
+                            if (item["Configurators"] is JArray configuratorsArray)
+                            {
+                                foreach (var configurator in configuratorsArray)
+                                {
+                                    var propValue = new PropValue
+                                    {
+                                        PropId = configurator["PropId"]?.ToString(),
+                                        ValueId = configurator["ValueId"]?.ToString(),
+                                        Name = configurator["Name"]?.ToString(),
+                                        Value = configurator["Value"]?.ToString()
+                                    };
+                                    configuredItem.Configurators.Add(propValue);
+                                }
+                            }
+
+                            productInfo.ConfiguredItems.Add(configuredItem);
+                        }
+                    }
+
+                    return productInfo;
+                }
+                catch (Exception ex)
+                {
+                    retryCount++;
+                    System.Diagnostics.Debug.WriteLine($"GetProductFromTaobaoAsync Error Text: '{ex.Message.ToString()}'");
+                    if (retryCount >= maxRetryCount)
+                    {
+                        return null; // 재시도 횟수를 초과하면 null을 반환
+                    }
+
+                    // 잠시 대기 후 재시도
+                    await Task.Delay(1000 * retryCount);
+                }
+            }
+
+            return null; // 여기에 도달할 경우는 null을 반환
+        }
+
+
+        public async Task<string> GetProductFrom1688DescriptionAsync(string productId)
+        {
+            var maxRetryCount = 3; // 최대 재시도 횟수
+            var retryCount = 0;
+            while (retryCount < maxRetryCount)
+            {
+                try
+                {
+                    System.Diagnostics.Debug.WriteLine($"GetProductFrom1688DescriptionAsync text: '{productId}'");
+
+                    var client = new HttpClient();
+                    var request = new HttpRequestMessage(HttpMethod.Get, $"https://otapi-1688.p.rapidapi.com/GetItemDescription?language=en&itemId={productId}");
+                    request.Headers.Add("X-RapidAPI-Key", "e9e7dd9c85msh4c01ab54707ebc8p120a38jsn0ab00d00a6cf");
+                    request.Headers.Add("X-RapidAPI-Host", "otapi-1688.p.rapidapi.com");
+                    var response = await client.SendAsync(request);
+                    response.EnsureSuccessStatusCode();
+
+                    var responseContent = await response.Content.ReadAsStringAsync();
+                    var data = JObject.Parse(responseContent);
+
+                    // 'ItemDescription' 필드에서 HTML 문자열 추출
+                    var descriptionHtml = data["OtapiItemDescription"]?["ItemDescription"]?.ToString();
+
+                    return descriptionHtml;
+                }
+                catch (Exception ex)
+                {
+                    retryCount++;
+                    System.Diagnostics.Debug.WriteLine($"GetProductFromTaobaoAsync Error Text: '{ex.Message.ToString()}'");
+                    if (retryCount >= maxRetryCount)
+                    {
+                        return null; // 재시도 횟수를 초과하면 null을 반환
+                    }
+
+                    // 잠시 대기 후 재시도
+                    await Task.Delay(1000 * retryCount);
+                }
+            }
+
+            return null; // 여기에 도달할 경우는 null을 반환
+        }
+
+        #endregion
+
         #region ApiJd
 
         public async Task<List<ProductInfo>> GetProductsFromJdAsync(
@@ -1711,7 +1976,9 @@ namespace Nop.Web.Areas.Admin.Controllers
             public string PicUrl { get; set; }
             public decimal Price { get; set; }
             public List<SkuInfo> Skus { get; set; }
+            public List<ConfiguredItem> ConfiguredItems { get; set; }
             public List<Props> Props { get; set; }
+            public List<Props1688> Props1688 { get; set; }
             public List<PropImage> PropImages { get; set; }
             public List<SellerItem> SellerItems { get; set; }
             public string Title { get; set; }
@@ -1771,6 +2038,53 @@ namespace Nop.Web.Areas.Admin.Controllers
             public string Value { get; set; }   // 속성 값 (예: "파란색")
         }
 
+        public class ConfiguredItem
+        {
+            public string Id { get; set; }            // 구성 항목의 ID
+            public int Quantity { get; set; }         // 수량
+            public int SalesCount { get; set; }       // 판매 수
+            public List<PropValue> Configurators { get; set; } // 구성 옵션들
+            public PriceInfo Price { get; set; }      // 가격 정보
+
+            // 가격 정보를 나타내는 클래스
+            public class PriceInfo
+            {
+                public decimal OriginalPrice { get; set; } // 원래 가격
+                public decimal ConvertedPrice { get; set; } // 변환된 가격
+                public bool IsShippingIncluded { get; set; } // 배송비 포함 여부
+            }
+        }
+
+        public class Props1688
+        {
+            [JsonProperty("Pid")]
+            public string Pid { get; set; }
+
+            [JsonProperty("Vid")]
+            public string Vid { get; set; }
+
+            [JsonProperty("PropertyName")]
+            public string PropertyName { get; set; }
+
+            [JsonProperty("Value")]
+            public string Value { get; set; }
+
+            [JsonProperty("OriginalPropertyName")]
+            public string OriginalPropertyName { get; set; }
+
+            [JsonProperty("OriginalValue")]
+            public string OriginalValue { get; set; }
+
+            [JsonProperty("IsConfigurator")]
+            public bool IsConfigurator { get; set; }
+
+            [JsonProperty("ImageUrl")]
+            public string ImageUrl { get; set; }
+
+            [JsonProperty("MiniImageUrl")]
+            public string MiniImageUrl { get; set; }
+        }
+
         public class Props
         {
             [JsonProperty("is_configurator")]
@@ -1826,6 +2140,20 @@ namespace Nop.Web.Areas.Admin.Controllers
             public string OriginalTitle { get; set; }
             public string CategoryId { get; set; }
             public string Id { get; set; }
+        }
+
+        public class ApiGetProductQueryParameters
+        {
+            public string ApiName { get; set; }
+            public string SearchName { get; set; }
+            public string CategoryName { get; set; }
+            public int Page { get; set; }
+            public int Size { get; set; }
+            public string Sort { get; set; }
+            public int MinSellerRating { get; set; }
+            public int MaxSellerRating { get; set; }
+            public string QueryLanguage { get; set; }
+            public string TargetLanguage { get; set; }
         }
 
         public async Task<List<ProductInfo>> GetProductsFromTaobaoAsync(
@@ -2452,6 +2780,9 @@ namespace Nop.Web.Areas.Admin.Controllers
                             {
                                 var imageData = imageBase64List[i];
                                 var pictureBinary = Convert.FromBase64String(imageData.Base64String);
+
+                                //pictureBinary = await RemoveWatermarkFromBinaryAsync(pictureBinary);
+
                                 var mimeType = await GetMimeTypeFromUrl(imageData.Url);
                                 var seoFilename = product.Name + System.IO.Path.GetExtension(imageData.Url);
                                 var picture = await _pictureService.InsertPictureAsync(pictureBinary, mimeType, seoFilename);
@@ -2493,6 +2824,42 @@ namespace Nop.Web.Areas.Admin.Controllers
                 }
             }
             return RedirectToAction("List");
+        }
+
+        public async Task<byte[]> RemoveWatermarkFromBinaryAsync(byte[] imageData)
+        {
+            var imageMat = new Mat();
+            using (var buf = new VectorOfByte(imageData))
+            {
+                CvInvoke.Imdecode(buf, ImreadModes.Color, imageMat);
+            }
+
+            // 워터마크의 추정 크기 및 중앙 위치 계산
+            var watermarkWidth = 400;
+            var watermarkHeight = 50;
+            var imageCenter = new System.Drawing.Point(imageMat.Width / 2, imageMat.Height / 2);
+
+            // 클론 스탬핑할 소스 영역과 타겟 영역 설정
+            var cloneSourceRegion = new System.Drawing.Rectangle(imageCenter.X - watermarkWidth / 2, imageCenter.Y - watermarkHeight * 3 / 2, watermarkWidth, watermarkHeight);
+            var cloneTargetRegion = new System.Drawing.Rectangle(imageCenter.X - watermarkWidth / 2, imageCenter.Y - watermarkHeight / 2, watermarkWidth, watermarkHeight);
+
+            // 클론 스탬핑 실행
+            var sourceRegionMat = new Mat(imageMat, cloneSourceRegion);
+            sourceRegionMat.CopyTo(new Mat(imageMat, cloneTargetRegion));
+
+            // 결과 이미지를 바이트 배열로 변환
+            byte[] resultData;
+            using (var ms = new MemoryStream())
+            {
+                Bitmap bitmap = new Bitmap(imageMat.Width, imageMat.Height, PixelFormat.Format24bppRgb);
+                var data = bitmap.LockBits(new System.Drawing.Rectangle(0, 0, bitmap.Width, bitmap.Height), ImageLockMode.WriteOnly, bitmap.PixelFormat);
+                CvInvoke.cvCopy(imageMat.Ptr, data.Scan0, IntPtr.Zero); // 여기서 cvCopy는 Emgu.CV의 최신 버전에 따라 변경될 필요가 있습니다.
+                bitmap.UnlockBits(data);
+                bitmap.Save(ms, ImageFormat.Jpeg);
+                resultData = ms.ToArray();
+            }
+
+            return resultData;
         }
 
         private async Task ApiEdit(ProductModel model)
@@ -2724,152 +3091,424 @@ namespace Nop.Web.Areas.Admin.Controllers
         }
 
 
-        [HttpPost, ParameterBasedOnFormName("save-api", "callApi")]
-        public virtual async Task<IActionResult> ApiCreate(string query, bool continueEditing = false)
+        [HttpPost, ParameterBasedOnFormName("save-continue", "continueEditing")]
+        public virtual async Task<IActionResult> ApiCreate(ApiGetProductQueryParameters parameters, bool continueEditing = false)
         {
-            // Call the method to get the product data from Taobao API
-            var productInfoList = await GetProductsFromTaobaoAsync(query);
+            // 현재 날짜를 yyyyMMdd 형식으로 가져옴.
+            var today = DateTime.Now.ToString("yyyyMMdd");
 
-            foreach (var productInfo in productInfoList)
+            // 카테고리 작업 소요시간 시작
+            var swCategories = Stopwatch.StartNew();
+            swCategories.Start();
+
+            #region Remove Category
+
+            // 전체 카테고리 가져오기
+            var categories = await _categoryService.GetAllCategoriesAsync();
+
+            // "미분류 카테고리" 이름을 가진 카테고리를 찾기
+            var unclassifiedCategoryName = "미분류 카테고리";
+            var unclassifiedCategory = categories.FirstOrDefault(cat => cat.Name == unclassifiedCategoryName);
+
+            // "미분류 카테고리"의 ID를 가져옴
+            int unclassifiedCategoryId = unclassifiedCategory.Id;
+
+            // 하위 카테고리를 가져오기
+            var subCategories = await _categoryService.GetAllCategoriesByParentCategoryIdAsync(unclassifiedCategoryId);
+
+            foreach (var subCategory in subCategories)
             {
-                var productId = productInfo.Id;
-                var productUrl = productInfo.Url;
-                var productTitle = productInfo.Title;
-                var productData = await GetProductFromTaobaoAsync(productId);
-                // Fill in the ProductModel with the data from Taobao API
-                var model = new ProductModel
+                if (subCategory.Name != today)
                 {
-                    Id = 0,
-                    Name = productData.Title,
-                    Price = productData.Price,
-                    FullDescription = $"<p>{productData.Description.Html}</p>",
-                    Sku = productUrl,
-                    AvailableStartDateTimeUtc = DateTime.UtcNow,
-                    Published = true,
-                    VisibleIndividually = true,
-                    SelectedCategoryIds = new List<int> { 14091 },
-                    IsTaxExempt = false,
-                    NotifyAdminForQuantityBelow = 1,
-                    BackorderModeId = 0,
-                    AllowBackInStockSubscriptions = false,
-                    OrderMinimumQuantity = 1,
+                    // 각 하위 카테고리에 속한 상품 가져오기
+                    var productsInSubCategory = await _categoryService.GetProductCategoriesByCategoryIdAsync(subCategory.Id);
 
+                    if (!productsInSubCategory.Any())
+                    {
+                        // 하위 카테고리에 속한 상품이 없는 경우, 해당 카테고리 삭제
+                        await _categoryService.DeleteCategoryAsync(subCategory);
+                    }
+                }
+
+            }
+
+            #endregion
+
+            #region Create or use category
+
+            int categoryId;
+
+            // 하위 카테고리에서 현재 날짜와 같은 이름의 카테고리를 찾기
+            var todayCategory = subCategories.FirstOrDefault(cat => cat.Name == today);
+
+            if (todayCategory == null)
+            {
+                // 해당 날짜의 카테고리가 존재하지 않는 경우, 새 카테고리를 생성
+
+                // Category 설정
+                var newCategory = new Category
+                {
+                    Name = today,
+                    Description = today,
+                    MetaKeywords = null,
+                    MetaDescription = null,
+                    MetaTitle = null,
+                    PageSizeOptions = "50, 100, 150",
+                    ParentCategoryId = unclassifiedCategory?.Id ?? 0, // "미분류 카테고리"의 ID를 사용하거나 기본값으로 0을 사용
+                    CategoryTemplateId = 1,
+                    PictureId = 0,
+                    PageSize = 5,
+                    AllowCustomersToSelectPageSize = true,
+                    ShowOnHomepage = false,
+                    IncludeInTopMenu = true,
+                    Published = true,
+                    Deleted = false,
+                    DisplayOrder = 0,
+                    PriceRangeFiltering = true,
+                    PriceTo = 10000,
+                    ManuallyPriceRange = true,
+                    CreatedOnUtc = DateTime.UtcNow,
+                    UpdatedOnUtc = DateTime.UtcNow,
                 };
 
-                if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageProducts))
-                    return AccessDeniedView();
+                // 새로운 카테고리를 데이터베이스에 저장
+                await _categoryService.InsertCategoryAsync(newCategory);
 
-                //validate maximum number of products per vendor
-                var currentVendor = await _workContext.GetCurrentVendorAsync();
-                if (_vendorSettings.MaximumProductNumber > 0 && currentVendor != null
-                    && await _productService.GetNumberOfProductsByVendorIdAsync(currentVendor.Id) >= _vendorSettings.MaximumProductNumber)
+                // 새로 생성된 카테고리의 ID를 가져옴
+                categoryId = newCategory.Id;
+            }
+            else
+            {
+                // 해당 날짜의 카테고리가 이미 존재하는 경우, 해당 카테고리의 ID를 가져옴
+                categoryId = todayCategory.Id;
+            }
+
+            #endregion
+
+            #region Search Category language settings
+
+            var languageId = 1; //var languageId = 1; // 영어에 대한 ID
+                                //var languageId = 3; // 중국어에 대한 ID
+
+            var categorizedCategories = new List<CategorizedCategory>();
+
+            foreach (var category in categories)
+            {
+                var parentCategory = await _categoryService.GetCategoryByIdAsync(category.ParentCategoryId);
+                if (parentCategory == null || int.TryParse(parentCategory.Name, out _) || parentCategory.Name == "미분류 카테고리")
                 {
-                    _notificationService.ErrorNotification(string.Format(await _localizationService.GetResourceAsync("Admin.Catalog.Products.ExceededMaximumNumber"),
-                        _vendorSettings.MaximumProductNumber));
-                    return RedirectToAction("List");
+                    continue;
                 }
 
-                if (ModelState.IsValid)
+                var parentName = await _localizedEntityService.GetLocalizedValueAsync(languageId, parentCategory.Id, "Category", "Name");
+                if (string.IsNullOrEmpty(parentName))
                 {
-                    //a vendor should have access only to his products
-                    if (currentVendor != null)
+                    parentName = await DeppLTranslateTextAsync(parentCategory.Name, "", LanguageCode.Chinese);
+                }
+
+                var childTranslatedName = await _localizedEntityService.GetLocalizedValueAsync(languageId, category.Id, "Category", "Name");
+                if (string.IsNullOrEmpty(childTranslatedName))
+                {
+                    childTranslatedName = await DeppLTranslateTextAsync(category.Name, "", LanguageCode.Chinese);
+                }
+
+                var childNames = childTranslatedName.Split('/');
+
+                var grandChildCategoryIds = await _categoryService.GetChildCategoryIdsAsync(category.Id);
+
+                foreach (var grandChildCategoryId in grandChildCategoryIds)
+                {
+                    var grandChildCategory = await _categoryService.GetCategoryByIdAsync(grandChildCategoryId);
+                    var grandChildTranslatedName = await _localizedEntityService.GetLocalizedValueAsync(languageId, grandChildCategory.Id, "Category", "Name");
+                    if (string.IsNullOrEmpty(grandChildTranslatedName))
                     {
-                        model.VendorId = currentVendor.Id;
+                        grandChildTranslatedName = await DeppLTranslateTextAsync(grandChildCategory.Name, "", LanguageCode.Chinese);
                     }
+                    var grandChildNames = grandChildTranslatedName.Split('/');
 
-                    //vendors cannot edit "Show on home page" property
-                    if (currentVendor != null && model.ShowOnHomepage)
+                    foreach (var childName in childNames)
                     {
-                        model.ShowOnHomepage = false;
-                    }
-
-                    //product
-                    var product = model.ToEntity<Product>();
-                    product.CreatedOnUtc = DateTime.UtcNow;
-                    product.UpdatedOnUtc = DateTime.UtcNow;
-                    await _productService.InsertProductAsync(product);
-
-                    // productData에서 이미지 URL 목록을 가져옵니다.
-                    var imageUrlList = productData.ItemImgs.Select(i => i.Url).ToList();
-
-                    // 이미지 URL들을 Base64로 변환합니다.
-                    var imageBase64List = await ConvertImagesToBase64Async(imageUrlList);
-
-                    // 각 이미지를 처리합니다.
-                    for (int i = 0; i < imageBase64List.Count; i++)
-                    {
-                        var imageData = imageBase64List[i];
-
-                        // Base64 문자열을 바이트 배열로 변환합니다.
-                        var pictureBinary = Convert.FromBase64String(imageData.Base64String);
-
-                        // 이미지 URL에서 MIME 타입을 결정합니다.
-                        var mimeType = await GetMimeTypeFromUrl(imageData.Url);
-                        var seoFilename = product.Name + System.IO.Path.GetExtension(imageData.Url);
-
-                        // 사진을 삽입합니다.
-                        var picture = await _pictureService.InsertPictureAsync(pictureBinary, mimeType, seoFilename);
-
-                        // 사진의 SEO 파일명을 설정합니다.
-                        await _pictureService.SetSeoFilenameAsync(picture.Id, await _pictureService.GetPictureSeNameAsync(product.Name));
-
-                        // 제품과 사진을 연결합니다.
-                        await _productService.InsertProductPictureAsync(new ProductPicture
+                        foreach (var grandChildName in grandChildNames)
                         {
-                            PictureId = picture.Id,
-                            ProductId = product.Id,
-                            DisplayOrder = i
-                        });
+                            // 2차와 3차의 이름이 같으면 3차만 사용
+                            var combinedName = childName == grandChildName ? grandChildName : $"{childName} {grandChildName}";
+
+                            var categorizedCategory = new CategorizedCategory
+                            {
+                                Parent = parentCategory,
+                                ParentName = childTranslatedName,
+                                SecondCategoryId = category.Id,
+                                Children = new List<CategoryWithTranslation>
+                                {
+                                    new CategoryWithTranslation
+                                    {
+                                        CategoryData = grandChildCategory,
+                                        TranslatedName = combinedName
+                                    }
+                                }
+                            };
+
+                            categorizedCategories.Add(categorizedCategory);
+                        }
                     }
-
-                    //search engine name
-                    model.SeName = await _urlRecordService.ValidateSeNameAsync(product, model.SeName, product.Name, true);
-                    await _urlRecordService.SaveSlugAsync(product, model.SeName, 0);
-
-                    //locales
-                    await UpdateLocalesAsync(product, model , true);
-
-                    //categories
-                    await SaveCategoryMappingsAsync(product, model);
-
-                    //manufacturers
-                    await SaveManufacturerMappingsAsync(product, model);
-
-                    //ACL (customer roles)
-                    await SaveProductAclAsync(product, model);
-
-                    //stores
-                    await _productService.UpdateProductStoreMappingsAsync(product, model.SelectedStoreIds);
-
-                    //discounts
-                    await SaveDiscountMappingsAsync(product, model);
-
-                    //tags
-                    await _productTagService.UpdateProductTagsAsync(product, ParseProductTags(model.ProductTags));
-
-                    //warehouses
-                    await SaveProductWarehouseInventoryAsync(product, model);
-
-                    //quantity change history
-                    await _productService.AddStockQuantityHistoryEntryAsync(product, product.StockQuantity, product.StockQuantity, product.WarehouseId,
-                        await _localizationService.GetResourceAsync("Admin.StockQuantityHistory.Messages.Edit"));
-
-                    //activity log
-                    await _customerActivityService.InsertActivityAsync("AddNewProduct",
-                        string.Format(await _localizationService.GetResourceAsync("ActivityLog.AddNewProduct"), product.Name), product);
-
-                    _notificationService.SuccessNotification(await _localizationService.GetResourceAsync("Admin.Catalog.Products.Added"));
-                }
-                else
-                {
-                    //prepare model
-                    model = await _productModelFactory.PrepareProductModelAsync(model, null, true);
-
-                    //if we got this far, something failed, redisplay form
-                    return View(model);
                 }
             }
 
+            if (categorizedCategories.Count < 1)
+            {
+                foreach (var category in categories)
+                {
+                    if (category.ParentCategoryId == 0)
+                    {
+                        continue;
+                    }
+
+                    var localizedName = await _localizedEntityService.GetLocalizedValueAsync(languageId, category.Id, "Category", "Name");
+
+                    var categorizedCategory = new CategorizedCategory
+                    {
+                        ParentName = localizedName,
+                        SecondCategoryId = category.Id,
+                        Children = new List<CategoryWithTranslation>
+                                {
+                                    new CategoryWithTranslation
+                                    {
+                                        CategoryData = category,
+                                        TranslatedName = localizedName
+                                    }
+                                }
+                    };
+
+                    categorizedCategories.Add(categorizedCategory);
+                }
+            }
+
+            #endregion
+
+
+            // 카테고리 작업 소요시간 종료
+            swCategories.Stop();
+            var ts = swCategories.Elapsed;
+            var elapsedTime = $"{ts.Hours:00}:{ts.Minutes:00}:{ts.Seconds:00}.{ts.Milliseconds:000}";
+            System.Diagnostics.Debug.WriteLine($"swCategories : '{elapsedTime}'");
+
+            var randomizedCategories = new List<CategorizedCategory>();
+            var random = new Random();
+
+            while (categorizedCategories.Count > 0)
+            {
+                var index = random.Next(categorizedCategories.Count); // 랜덤한 인덱스 선택
+                var category = categorizedCategories[index];
+                randomizedCategories.Add(category);
+                categorizedCategories.RemoveAt(index);
+            }
+
+            foreach (var categorizedCategory in randomizedCategories)
+            {
+                var parentName = categorizedCategory.ParentName;
+                foreach (var childCategory in categorizedCategory.Children)
+                {
+                    /*var searchQuery = childCategory.TranslatedName.Contains(parentName)
+                                      ? childCategory.TranslatedName
+                                      : $"{parentName} {childCategory.TranslatedName}";*/
+
+                    var searchQuery = childCategory.TranslatedName;
+                    System.Diagnostics.Debug.WriteLine($"GetcategoryNameProductsFromTaobaoAsync : '{searchQuery}'");
+
+                    var nameProductInfoList = new List<ProductInfo>();
+
+                    switch (parameters.ApiName)
+                    {
+                        case "Taobao": nameProductInfoList = await GetcategoryNameProductsFromTaobaoAsync(searchQuery, size: 1);
+                            break;
+                        case "JD": nameProductInfoList = await GetProductsFromJdAsync(searchQuery, size: 5);
+                            break;
+                        case "1688":
+                            Search1688Info search1688Info = new Search1688Info();
+                            nameProductInfoList = await GetProductsFrom1688Async(searchQuery);
+                            break;
+                        default:
+                            break;
+                    }
+
+                    // 2023.10.18 상품정보 JD사이트로 변경
+                    // var nameProductInfoList = await GetcategoryNameProductsFromTaobaoAsync(searchQuery, size: 1);
+
+                    // var nameProductInfoList = await GetProductsFromJdAsync(searchQuery, size: 5);
+
+                    if (nameProductInfoList == null)
+                    {
+                        continue;
+                    }
+
+                    foreach (var productInfo in nameProductInfoList)
+                    {
+                        var productId = productInfo.Id;
+                        var productUrl = productInfo.Url;
+                        var productBySku = await _productService.GetProductBySkuAsync(productUrl);
+                        if (productBySku != null)
+                        {
+                            // 동일 SKU일경우 저장하지않는다.
+                            System.Diagnostics.Debug.WriteLine($"Skip the product : '{productUrl}'");
+                            continue;
+                        }
+
+                        var productTitle = productInfo.Title;
+                        var productOriginalTitle = productInfo.OriginalTitle;
+                        var translatedValue = await DeppLTranslateTextAsync(productOriginalTitle, LanguageCode.Chinese, LanguageCode.Korean);
+
+                        // var productData = await GetProductFromTaobaoAsync(productId);
+                        //var productData = await GetProductFromJdAsync(productId);
+
+                        var productData = await GetProductFrom1688Async(productId);
+
+                        if (productData == null)
+                        {
+                            // 상품정보가 API에 없으면 건너뛴다
+                            continue;
+                        }
+
+                        System.Diagnostics.Debug.WriteLine($"categorizedCategory : '{childCategory.CategoryData.Name}'");
+                        var model = new ProductModel
+                        {
+                            Id = 0,
+                            Name = string.IsNullOrEmpty(translatedValue) ? "ProductModel Name 값을 불러오지못했습니다." : translatedValue,
+                            Price = productData.Price,
+                            FullDescription = productData.Description?.Html != null
+                                                      ? $"<p>{productData.Description.Html}</p>"
+                                                      : "<p>FullDescription 값을 불러오지못했습니다.</p>",
+                            Sku = string.IsNullOrEmpty(productUrl) ? "Sku 값을 불러오지못했습니다." : productUrl,
+                            AvailableStartDateTimeUtc = DateTime.UtcNow,
+                            Published = true,
+                            ProductTypeId = 5,
+                            BasepriceUnitId = 3,
+                            BasepriceBaseUnitId = 3,
+                            VisibleIndividually = true,
+                            SelectedCategoryIds = new List<int>
+                            {
+                                //categoryId
+                                14272
+                            },
+                            IsTaxExempt = false,
+                            NotifyAdminForQuantityBelow = 1,
+                            BackorderModeId = 0,
+                            AllowBackInStockSubscriptions = false,
+                            OrderMinimumQuantity = 1,
+                            OrderMaximumQuantity = 99999,
+                            ProductTemplateId = 1,
+                            Locales = new List<ProductLocalizedModel>
+                            {
+                                new ProductLocalizedModel
+                                {
+                                    // en
+                                    LanguageId = 1,
+                                    Name = string.IsNullOrEmpty(productTitle)
+                                           ? "ProductLocalizedModel Name 값을 불러오지못했습니다."
+                                           : productTitle
+                                },
+                                new ProductLocalizedModel
+                                {
+                                    // ko
+                                    LanguageId = 2,
+                                    Name = string.IsNullOrEmpty(translatedValue)
+                                           ? "ProductLocalizedModel Name 값을 불러오지못했습니다."
+                                           : translatedValue
+                                },
+                                new ProductLocalizedModel
+                                {
+                                    // cn
+                                    LanguageId = 3,
+                                    Name = string.IsNullOrEmpty(productOriginalTitle)
+                                           ? "ProductLocalizedModel Name 값을 불러오지못했습니다."
+                                           : productOriginalTitle
+                                }
+                            }
+                        };
+
+                        if (!await _permissionService.AuthorizeAsync(StandardPermissionProvider.ManageProducts))
+                            return AccessDeniedView();
+
+                        var currentVendor = await _workContext.GetCurrentVendorAsync();
+                        if (_vendorSettings.MaximumProductNumber > 0 && currentVendor != null
+                            && await _productService.GetNumberOfProductsByVendorIdAsync(currentVendor.Id) >= _vendorSettings.MaximumProductNumber)
+                        {
+                            _notificationService.ErrorNotification(string.Format(await _localizationService.GetResourceAsync("Admin.Catalog.Products.ExceededMaximumNumber"),
+                                _vendorSettings.MaximumProductNumber));
+                            return RedirectToAction("List");
+                        }
+
+                        if (ModelState.IsValid)
+                        {
+                            if (currentVendor != null)
+                            {
+                                model.VendorId = currentVendor.Id;
+                            }
+
+                            if (currentVendor != null && model.ShowOnHomepage)
+                            {
+                                model.ShowOnHomepage = false;
+                            }
+
+                            var product = model.ToEntity<Product>();
+                            product.CreatedOnUtc = DateTime.UtcNow;
+                            product.UpdatedOnUtc = DateTime.UtcNow;
+
+                            var imageUrlList = productData.ItemImgs.Select(i => i.Url).ToList();
+                            var imageBase64List = await ConvertImagesToBase64Async(imageUrlList);
+
+                            if (imageBase64List.Count == 0)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"No images found for product. Skipping the product insertion.");
+                                continue;
+                            }
+
+                            await _productService.InsertProductAsync(product);
+
+                            for (var i = 0; i < imageBase64List.Count; i++)
+                            {
+                                var imageData = imageBase64List[i];
+                                var pictureBinary = Convert.FromBase64String(imageData.Base64String);
+                                //pictureBinary = await RemoveWatermarkFromBinaryAsync(pictureBinary);
+                                var mimeType = await GetMimeTypeFromUrl(imageData.Url);
+                                var seoFilename = product.Name + System.IO.Path.GetExtension(imageData.Url);
+                                var picture = await _pictureService.InsertPictureAsync(pictureBinary, mimeType, seoFilename);
+                                await _pictureService.SetSeoFilenameAsync(picture.Id, await _pictureService.GetPictureSeNameAsync(product.Name));
+                                await _productService.InsertProductPictureAsync(new ProductPicture
+                                {
+                                    PictureId = picture.Id,
+                                    ProductId = product.Id,
+                                    DisplayOrder = i
+                                });
+                            }
+
+                            // 상품 특성 매핑 메서드 호출
+                            // await MapTaobaoProductAttributesAsync(product.Id, productData);
+
+                            model.SeName = await _urlRecordService.ValidateSeNameAsync(product, model.SeName, product.Name, true);
+                            await _urlRecordService.SaveSlugAsync(product, model.SeName, 0);
+
+                            await UpdateLocalesAsync(product, model, true);
+                            await SaveCategoryMappingsAsync(product, model);
+                            await SaveManufacturerMappingsAsync(product, model);
+                            await SaveProductAclAsync(product, model);
+                            await _productService.UpdateProductStoreMappingsAsync(product, model.SelectedStoreIds);
+                            await SaveDiscountMappingsAsync(product, model);
+                            await _productTagService.UpdateProductTagsAsync(product, ParseProductTags(model.ProductTags));
+                            await SaveProductWarehouseInventoryAsync(product, model);
+                            await _productService.AddStockQuantityHistoryEntryAsync(product, product.StockQuantity, product.StockQuantity, product.WarehouseId,
+                                await _localizationService.GetResourceAsync("Admin.StockQuantityHistory.Messages.Edit"));
+                            await _customerActivityService.InsertActivityAsync("AddNewProduct",
+                                string.Format(await _localizationService.GetResourceAsync("ActivityLog.AddNewProduct"), product.Name), product);
+                            _notificationService.SuccessNotification(await _localizationService.GetResourceAsync("Admin.Catalog.Products.Added"));
+                        }
+                        else
+                        {
+                            model = await _productModelFactory.PrepareProductModelAsync(model, null, true);
+                            return View(model);
+                        }
+                    }
+                }
+            }
             return RedirectToAction("List");
         }
 
@@ -3323,6 +3962,23 @@ namespace Nop.Web.Areas.Admin.Controllers
             if (product != null)
             {
                 product.Name = newName;
+                await _productService.UpdateProductAsync(product);
+            }
+            else
+            {
+                return NotFound();
+            }
+
+            return Ok();
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> UpdateProductPrice(int productId, decimal newPrice)
+        {
+            var product = await _productService.GetProductByIdAsync(productId);
+            if (product != null)
+            {
+                product.Price = newPrice;
                 await _productService.UpdateProductAsync(product);
             }
             else

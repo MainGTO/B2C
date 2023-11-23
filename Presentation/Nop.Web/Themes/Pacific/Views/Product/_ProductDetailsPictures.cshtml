@@ -21,6 +21,7 @@
 }
 
 <div class="picture-gallery">
+    <div style="height: 50px;"></div>
     @await Component.InvokeAsync(typeof(WidgetViewComponent), new { widgetZone = PublicWidgetZones.ProductDetailsBeforePictures, additionalData = Model })
     @if (isProductPageLayoutOne)
     {

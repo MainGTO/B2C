@@ -13,6 +13,7 @@
     @await Component.InvokeAsync(typeof(CustomerNavigationViewComponent), new { selectedTabId = CustomerNavigationEnum.Orders })
 }
 <div class="page account-page order-list-page">
+    <div style="height: 50px;"></div>
     <div class="page-title">
         <h1>@T("Account.MyAccount") - @T("Account.CustomerOrders")</h1>
     </div>

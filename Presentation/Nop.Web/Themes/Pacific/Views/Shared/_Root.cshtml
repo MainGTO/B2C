@@ -19,7 +19,11 @@
     <div class="master-wrapper-content">
         <style>
             .store-search-box {
-                width: 85% !important;
+                position: absolute; /* 또는 fixed */
+                left: 50%; /* 중앙에서 시작하도록 함 */
+                transform: translateX(-50%); /* 요소의 너비의 절반만큼 왼쪽으로 이동시켜 정확하게 중앙에 위치하도록 함 */
+                width: 80%;
+                z-index: 100;
             }
             .search-box-opener {
                 font-size: 24px; /* Or your preferred size */
@@ -32,7 +36,7 @@
         </div>
         
         <!-- 빈 공간 추가 -->
-        <div style="height: 100px;"></div>
+        <div style="height: 50px;"></div>
 
         @await Component.InvokeAsync(typeof(WidgetViewComponent), new { widgetZone = PublicWidgetZones.ContentBefore })
 

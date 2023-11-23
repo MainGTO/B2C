@@ -261,9 +261,10 @@
                 {
                     if (!string.IsNullOrEmpty(Model.MinOrderSubtotalWarning))
                     {
-                        <div class="min-amount-warning">
-                            @Model.MinOrderSubtotalWarning
-                        </div>
+                            <div class="min-amount-warning" style="font-size: 18px; color: red; font-weight: bold;">
+                                @Model.MinOrderSubtotalWarning
+                            </div>
+                            <br> <!-- 한 칸 아래로 이동 -->
                     }
                 }
                 @if (Model.IsEditable)

@@ -83,6 +83,7 @@
 
 @if (isCategoryPage && isCategoryPageOneColumn)
 {
+    <div style="height: 50px;"></div>
     <div class="center-1 @categoryPageColumnsClass">
         @await Component.InvokeAsync("Widget", new { widgetZone = PublicWidgetZones.MainColumnBefore })
         @RenderBody()
@@ -99,6 +100,7 @@ else
 {
     if (!isAccountPage)
     {
+        <div style="height: 50px;"></div>
         <div class="center-2 @categoryPageColumnsClass">
             @await Component.InvokeAsync(typeof(WidgetViewComponent), new { widgetZone = PublicWidgetZones.MainColumnBefore })
             @RenderBody()
@@ -119,6 +121,7 @@ else
     }
     else
     {
+        <div style="height: 50px;"></div>
         <div class="side-2">
             @if (IsSectionDefined("left"))
             {
